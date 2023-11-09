@@ -1,13 +1,23 @@
+import functools
 from os.path import exists
 from pathlib import Path
 import uuid
-from red_gym_env import RedGymEnv
+
+import gymnasium as gym
 from stable_baselines3 import PPO
 from stable_baselines3.common import env_checker
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList
 from tensorboard_callback import TensorboardCallback
+import pygba
+from pygba import PokemonEmerald, PyGBA, PyGBAEnv
+
+from red_gym_env import RedGymEnv
+
+import mgba.log
+mgba.log.silence()
+
 
 def make_env(rank, env_conf, seed=0):
     """
@@ -24,6 +34,35 @@ def make_env(rank, env_conf, seed=0):
     set_random_seed(seed)
     return _init
 
+def load_pokemon_game(gba_file: str, autoload_save: bool = True):
+    gba = PyGBA.load(gba_file, autoload_save=autoload_save)
+    if autoload_save:
+        # skip loading screen
+        for _ in range(16):
+            gba.press_a(30)
+        gba.wait(60)
+    else:
+        # skip loading screen and character creation
+        gba.wait(600)
+        for _ in range(120):
+            gba.press_a(30)
+        gba.wait(720)
+    return gba
+
+def make_gba_env(rank, env_conf, seed=0):
+    gba = load_pokemon_game(env_conf['gba_path'], autoload_save=True)
+    game_wrapper = PokemonEmerald()
+    # env = gym.make(
+    #     'PyGBA-v0',
+    #     gba=gba,
+    #     game_wrapper=game_wrapper,
+    #     frameskip=env_conf['frameskip'],
+    #     max_episode_steps=env_conf['max_steps'],
+    # )
+    env = PyGBAEnv(gba, game_wrapper, frameskip=env_conf['frameskip'], max_episode_steps=env_conf['max_steps'])
+    env.reset(seed=seed + rank)
+    return env
+
 if __name__ == '__main__':
 
     use_wandb_logging = False
@@ -37,13 +76,16 @@ if __name__ == '__main__':
                 'print_rewards': True, 'save_video': False, 'fast_video': True, 'session_path': sess_path,
                 'gb_path': '../PokemonRed.gb', 'debug': False, 'sim_frame_dist': 2_000_000.0, 
                 'use_screen_explore': True, 'reward_scale': 4, 'extra_buttons': False,
-                'explore_weight': 3 # 2.5
+                'explore_weight': 3, # 2.5
+                'gba_path': '../roms/pokemon_emerald.gba',
+                'frameskip': 23,
             }
     
     print(env_config)
     
-    num_cpu = 16  # Also sets the number of episodes per training iteration
-    env = SubprocVecEnv([make_env(i, env_config) for i in range(num_cpu)])
+    num_cpu = 4  # Also sets the number of episodes per training iteration
+    # env = SubprocVecEnv([make_env(i, env_config) for i in range(num_cpu)])
+    env = SubprocVecEnv([functools.partial(make_gba_env, i, env_config) for i in range(num_cpu)])
     
     checkpoint_callback = CheckpointCallback(save_freq=ep_length, save_path=sess_path,
                                      name_prefix='poke')
