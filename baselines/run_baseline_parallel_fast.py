@@ -1,38 +1,19 @@
-import functools
 from os.path import exists
 from pathlib import Path
 import uuid
 
-import gymnasium as gym
 from stable_baselines3 import PPO
-from stable_baselines3.common import env_checker
-from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
+from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList
 from tensorboard_callback import TensorboardCallback
-import pygba
-from pygba import PokemonEmerald, PyGBA, PyGBAEnv
+from pygba import PyGBA
 
-from red_gym_env import RedGymEnv
+from emerald_env import EmeraldEnv
 
 import mgba.log
 mgba.log.silence()
 
-
-def make_env(rank, env_conf, seed=0):
-    """
-    Utility function for multiprocessed env.
-    :param env_id: (str) the environment ID
-    :param num_env: (int) the number of environments you wish to have in subprocesses
-    :param seed: (int) the initial seed for RNG
-    :param rank: (int) index of the subprocess
-    """
-    def _init():
-        env = RedGymEnv(env_conf)
-        env.reset(seed=(seed + rank))
-        return env
-    set_random_seed(seed)
-    return _init
 
 def load_pokemon_game(gba_file: str, autoload_save: bool = True):
     gba = PyGBA.load(gba_file, autoload_save=autoload_save)
@@ -52,8 +33,7 @@ def load_pokemon_game(gba_file: str, autoload_save: bool = True):
 def make_gba_env(rank, env_conf, seed=0):
     def _init():
         gba = load_pokemon_game(env_conf['gba_path'], autoload_save=True)
-        game_wrapper = PokemonEmerald()
-        env = PyGBAEnv(gba, game_wrapper, frameskip=env_conf['frameskip'], max_episode_steps=env_conf['max_steps'])
+        env = EmeraldEnv(gba, frameskip=env_conf['frameskip'], max_episode_steps=env_conf['max_steps'])
         env.reset(seed=seed + rank)
         env.rank = rank
         return env
