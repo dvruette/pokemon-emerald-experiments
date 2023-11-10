@@ -14,10 +14,9 @@ from emerald_env import EmeraldEnv
 import mgba.log
 mgba.log.silence()
 
-
-def load_pokemon_game(gba_file: str, autoload_save: bool = True):
-    gba = PyGBA.load(gba_file, autoload_save=autoload_save)
-    if autoload_save:
+def load_pokemon_emerald(gba_file: str, save_file: str | None):
+    gba = PyGBA.load(gba_file, save_file=save_file)
+    if save_file is not None:
         # skip loading screen
         for _ in range(16):
             gba.press_a(30)
@@ -32,7 +31,7 @@ def load_pokemon_game(gba_file: str, autoload_save: bool = True):
 
 def make_gba_env(rank, env_conf, seed=0):
     def _init():
-        gba = load_pokemon_game(env_conf['gba_path'], autoload_save=True)
+        gba = load_pokemon_emerald(env_conf['gba_path'], env_conf['init_state'])
         env = EmeraldEnv(gba, frameskip=env_conf['frameskip'], max_episode_steps=env_conf['max_steps'])
         env.reset(seed=seed + rank)
         env.rank = rank
@@ -48,15 +47,15 @@ def main():
     sess_path = Path(f'session_{sess_id}')
 
     env_config = {
-                'headless': True, 'save_final_state': True, 'early_stop': False,
-                'action_freq': 24, 'init_state': '../has_pokedex_nballs.state', 'max_steps': ep_length, 
-                'print_rewards': True, 'save_video': False, 'fast_video': True, 'session_path': sess_path,
-                'gb_path': 'PokemonRed.gb', 'debug': False, 'sim_frame_dist': 2_000_000.0, 
-                'use_screen_explore': True, 'reward_scale': 4, 'extra_buttons': False,
-                'explore_weight': 3, # 2.5
-                'gba_path': 'roms/pokemon_emerald.gba',
-                'frameskip': 23,
-            }
+        # 'headless': True, 'save_final_state': True, 'early_stop': False,
+        # 'print_rewards': True, 'save_video': False, 'fast_video': True, 'session_path': sess_path,
+        # 'gb_path': 'PokemonRed.gb', 'debug': False, 'sim_frame_dist': 2_000_000.0, 
+        # 'use_screen_explore': True, 'reward_scale': 4, 'extra_buttons': False,
+        # 'explore_weight': 3, # 2.5
+        'gba_path': 'roms/pokemon_emerald.gba', 'init_state': 'roms/pokemon_emerald.sav',
+        'max_steps': ep_length, 
+        'frameskip': 23,
+    }
     
     print(env_config)
     

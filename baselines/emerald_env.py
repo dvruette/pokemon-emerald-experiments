@@ -18,8 +18,8 @@ class EmeraldEnv(PyGBAEnv):
         super().__init__(gba, game_wrapper, **kwargs)
 
         self.arrow_keys = [None, "up", "down", "right", "left"]
-        self.buttons = [None, "A", "B", "select", "start", "L", "R"]
-        # self.buttons = [None, "A", "B"]
+        # self.buttons = [None, "A", "B", "select", "start", "L", "R"]
+        self.buttons = [None, "A", "B"]
 
         # cartesian product of arrows and buttons, i.e. can press 1 arrow and 1 button at the same time
         self.actions = [(a, b) for a in self.arrow_keys for b in self.buttons]

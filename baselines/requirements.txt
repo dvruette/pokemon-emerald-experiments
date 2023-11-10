@@ -94,5 +94,5 @@ tzdata==2023.3
 wandb==0.15.12
 wcwidth==0.2.6
 webencodings==0.5.1
-pygba
-mgba
+pygba>=0.2.6
+mgba==0.10.2
