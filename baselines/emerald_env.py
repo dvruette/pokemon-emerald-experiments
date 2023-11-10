@@ -1,4 +1,6 @@
 import os
+from pathlib import Path
+import shutil
 
 import gymnasium as gym
 import numpy as np
@@ -12,6 +14,8 @@ class EmeraldEnv(PyGBAEnv):
     def __init__(
         self,
         gba: PyGBA,
+        frames_path: str | Path | None = None,
+        rank: int = 0,
         **kwargs,
     ):
         game_wrapper = CustomEmeraldWrapper()
@@ -26,6 +30,9 @@ class EmeraldEnv(PyGBAEnv):
         self.action_space = gym.spaces.Discrete(len(self.actions))
         
         self._total_reward = 0
+        
+        self.frames_path = frames_path
+        self.rank = rank
 
     def step(self, action_id):
         info = {}
@@ -33,9 +40,18 @@ class EmeraldEnv(PyGBAEnv):
         actions = self.get_action_by_id(action_id)
         actions = [KEY_MAP[a] for a in actions if a is not None]
 
-        os.makedirs("frames", exist_ok=True)
-        img = self._framebuffer.to_pil().convert("RGB")
-        img.save(f"frames/{self.rank:02d}.png")
+        if self.frames_path is not None:
+            out_path = Path(self.frames_path) / f"{self.rank:02d}" / f"{self._step:06d}.jpg"
+            if self._step == 0:
+                # delete old frames
+                if out_path.parent.exists():
+                    shutil.rmtree(out_path.parent)
+
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            img = self._framebuffer.to_pil().convert("RGB")
+            img.save(out_path)
+            thumbnail_path = Path(self.frames_path) / f"{self.rank:02d}.jpg"
+            thumbnail_path.write_bytes(out_path.read_bytes())
 
         if np.random.random() > self.repeat_action_probability:
             self.gba.core.set_keys(*actions)
@@ -62,7 +78,7 @@ class EmeraldEnv(PyGBAEnv):
 
         self._total_reward += reward
         self._step += 1
-        print(f"\r step={self._step} | {reward=} | total_reward={self._total_reward} | {done=} | {truncated=}", end="", flush=True)
+        print(f"\r step={self._step} | {reward=:.3g} | total_reward={self._total_reward:.3g} | {done=} | {truncated=}", end="", flush=True)
 
         return observation, reward, done, truncated, info
     
