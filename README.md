@@ -2,10 +2,13 @@
 
 ## Training the Model 🏋️ 
 
-1. Install dependencies:  
+1. Create a virtual environment:  
+```python3 -m venv venv```
+
+2. Install dependencies:  
 ```pip install -r baselines/requirements.txt```
 
-2. Run training script:  
+3. Run training script:  
 ```python baselines/run_baseline_parallel_fast.py```
 
 ## Tracking Training Progress 📈 
