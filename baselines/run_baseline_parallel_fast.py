@@ -22,10 +22,12 @@ def parse_args():
     parser.add_argument('--gba_path', type=str, default='roms/pokemon_emerald.gba')
     parser.add_argument('--init_state', type=str, default=None)
     parser.add_argument('--output_dir', type=str, default='outputs')
-    parser.add_argument('--frameskip', type=int, default=23)
-    parser.add_argument('--repeat_action_prob', type=float, default=0.1)
-    parser.add_argument('--episode_length', type=int, default=2048 * 10)
-    parser.add_argument('--early_stopping_patience', type=int, default=2048)
+    parser.add_argument('--frameskip', type=int, default=24)
+    parser.add_argument('--sticky_action_prob', type=float, default=0.2)
+    parser.add_argument('--action_noise', type=float, default=0.0)
+    parser.add_argument('--episode_length', type=int, default=2048 * 8)
+    parser.add_argument('--early_stopping_patience', type=int, default=2048 * 4)
+    parser.add_argument('--early_stopping_penalty', type=float, default=0.1)
     parser.add_argument('--learn_steps', type=int, default=40)
     parser.add_argument('--checkpoint', type=str, default=None)
     parser.add_argument('--num_cpu', type=int, default=24)
@@ -54,13 +56,15 @@ def make_gba_env(rank, env_conf, seed=0):
         gba = load_pokemon_emerald(env_conf['gba_path'], env_conf['init_state'])
         env = EmeraldEnv(
             gba,
-            frameskip=env_conf['frameskip'],
+            rank=rank,
             max_episode_steps=env_conf['max_steps'],
             frames_path=env_conf['frames_path'],
+            frameskip=env_conf['frameskip'],
+            sticky_action_probability=env_conf['sticky_action_probability'],
+            action_noise=env_conf['action_noise'],
             early_stopping=env_conf['early_stopping_patience'] > 0,
-            repeat_action_probability=env_conf['repeat_action_probability'],
             patience=env_conf['early_stopping_patience'],
-            rank=rank,
+            early_stopping_penalty=env_conf['early_stopping_penalty'],
         )
         env.reset()
         return env
@@ -86,8 +90,10 @@ def main(args):
         'frames_path': frames_path,
         'max_steps': ep_length, 
         'frameskip': args.frameskip,
-        'repeat_action_probability': args.repeat_action_prob,
+        'sticky_action_probability': args.sticky_action_prob,
+        'action_noise': args.action_noise,
         'early_stopping_patience': args.early_stopping_patience,
+        'early_stopping_penalty': args.early_stopping_penalty,
     }
     
     print(env_config)
@@ -125,7 +131,7 @@ def main(args):
         model.rollout_buffer.n_envs = num_cpu
         model.rollout_buffer.reset()
     else:
-        model = PPO('CnnPolicy', env, verbose=1, n_steps=ep_length // 8, batch_size=128, n_epochs=3, gamma=0.998, tensorboard_log=sess_path)
+        model = PPO('CnnPolicy', env, verbose=1, n_steps=2048, batch_size=128, n_epochs=3, gamma=0.9998, tensorboard_log=sess_path)
     
     for i in range(args.learn_steps):
         model.learn(total_timesteps=(ep_length)*num_cpu*1000, callback=CallbackList(callbacks))

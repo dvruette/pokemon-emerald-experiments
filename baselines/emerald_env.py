@@ -14,20 +14,24 @@ class EmeraldEnv(PyGBAEnv):
     def __init__(
         self,
         gba: PyGBA,
+        rank: int = 0,
         frames_path: str | Path | None = None,
         frame_save_freq: int = 1,
         early_stopping: bool = False,
         patience: int = 1024,
-        rank: int = 0,
+        early_stopping_penalty: float = 0.0,
+        action_noise: float = 0.0,
         **kwargs,
     ):
         game_wrapper = CustomEmeraldWrapper()
         super().__init__(gba, game_wrapper, **kwargs)
+        self.rank = rank
         self.frames_path = frames_path
         self.frame_save_freq = frame_save_freq
         self.early_stopping = early_stopping
         self.patience = patience
-        self.rank = rank
+        self.early_stopping_penalty = early_stopping_penalty
+        self.action_noise = action_noise
 
         self.arrow_keys = [None, "up", "down", "right", "left"]
         # self.buttons = [None, "A", "B", "select", "start", "L", "R"]
@@ -45,6 +49,8 @@ class EmeraldEnv(PyGBAEnv):
     def step(self, action_id):
         info = {}
 
+        if np.random.random() < self.action_noise:
+            action_id = np.random.randint(len(self.actions))
         actions = self.get_action_by_id(action_id)
         actions = [KEY_MAP[a] for a in actions if a is not None]
 
@@ -74,37 +80,50 @@ class EmeraldEnv(PyGBAEnv):
             pass
         observation = self._get_observation()
 
+        # reward calculation
         reward = 0
-        done = False
-        truncated = self.check_if_done()
         if self.game_wrapper is not None:
             reward = self.game_wrapper.reward(self.gba, observation)
-            done = done or self.game_wrapper.game_over(self.gba, observation)
             info.update(self.game_wrapper.info(self.gba, observation))
+        if self.early_stopping and self._step - self._max_reward_step > self.patience:
+            reward -= self.early_stopping_penalty
+
+        self._total_reward += reward
+        if self._total_reward > self._max_reward:
+            self._max_reward = self._total_reward
+            self._max_reward_step = self._step
+        
+        info["rewards"]["total_reward"] = self._total_reward
 
         # the tensorboard will read out the agent_stats list and plot it
         self.agent_stats.append(info["rewards"])
 
-        self._total_reward += reward
-        if self._total_reward > self._max_reward:
-            self._max_reward = reward
-            self._max_reward_step = self._step
+        done = self.check_if_done()
+        truncated = self.check_if_truncated()
+
         self._step += 1
         reward_display = " | ".join(f"{k}={v:.3g}" for k, v in info["rewards"].items())
-        print(f"\r step={self._step} | {reward_display}", end="", flush=True)
-
+        print(f"\r step={self._step:5d} | {reward_display}", end="", flush=True)
         return observation, reward, done, truncated, info
     
-    def check_if_done(self):
+    def check_if_truncated(self):
         if self.max_episode_steps is not None and self._step >= self.max_episode_steps:
             return True
         if self.early_stopping and self._step - self._max_reward_step > self.patience:
             return True
         return False
+    
+    def check_if_done(self):
+        if self.check_if_truncated():
+            return True
+        if self.game_wrapper is not None:
+            observation = self._get_observation()
+            return self.game_wrapper.game_over(self.gba, observation)
+        return False
 
     def reset(self, seed=None):
-        return super().reset(seed=seed)
         self._total_reward = 0
         self._max_reward = 0
         self._max_reward_step = 0
         self.agent_stats = []
+        return super().reset(seed=seed)
