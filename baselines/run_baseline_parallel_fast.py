@@ -50,21 +50,18 @@ def load_pokemon_game(gba_file: str, autoload_save: bool = True):
     return gba
 
 def make_gba_env(rank, env_conf, seed=0):
-    gba = load_pokemon_game(env_conf['gba_path'], autoload_save=True)
-    game_wrapper = PokemonEmerald()
-    # env = gym.make(
-    #     'PyGBA-v0',
-    #     gba=gba,
-    #     game_wrapper=game_wrapper,
-    #     frameskip=env_conf['frameskip'],
-    #     max_episode_steps=env_conf['max_steps'],
-    # )
-    env = PyGBAEnv(gba, game_wrapper, frameskip=env_conf['frameskip'], max_episode_steps=env_conf['max_steps'])
-    env.reset(seed=seed + rank)
-    return env
+    def _init():
+        gba = load_pokemon_game(env_conf['gba_path'], autoload_save=True)
+        game_wrapper = PokemonEmerald()
+        env = PyGBAEnv(gba, game_wrapper, frameskip=env_conf['frameskip'], max_episode_steps=env_conf['max_steps'])
+        env.reset(seed=seed + rank)
+        env.rank = rank
+        return env
+    set_random_seed(seed)
+    return _init
 
-if __name__ == '__main__':
 
+def main():
     use_wandb_logging = False
     ep_length = 2048 * 10
     sess_id = str(uuid.uuid4())[:8]
@@ -74,18 +71,18 @@ if __name__ == '__main__':
                 'headless': True, 'save_final_state': True, 'early_stop': False,
                 'action_freq': 24, 'init_state': '../has_pokedex_nballs.state', 'max_steps': ep_length, 
                 'print_rewards': True, 'save_video': False, 'fast_video': True, 'session_path': sess_path,
-                'gb_path': '../PokemonRed.gb', 'debug': False, 'sim_frame_dist': 2_000_000.0, 
+                'gb_path': 'PokemonRed.gb', 'debug': False, 'sim_frame_dist': 2_000_000.0, 
                 'use_screen_explore': True, 'reward_scale': 4, 'extra_buttons': False,
                 'explore_weight': 3, # 2.5
-                'gba_path': '../roms/pokemon_emerald.gba',
+                'gba_path': 'roms/pokemon_emerald.gba',
                 'frameskip': 23,
             }
     
     print(env_config)
     
-    num_cpu = 4  # Also sets the number of episodes per training iteration
+    num_cpu = 24  # Also sets the number of episodes per training iteration
     # env = SubprocVecEnv([make_env(i, env_config) for i in range(num_cpu)])
-    env = SubprocVecEnv([functools.partial(make_gba_env, i, env_config) for i in range(num_cpu)])
+    env = SubprocVecEnv([make_gba_env(i, env_config) for i in range(num_cpu)])
     
     checkpoint_callback = CheckpointCallback(save_freq=ep_length, save_path=sess_path,
                                      name_prefix='poke')
@@ -126,3 +123,7 @@ if __name__ == '__main__':
 
     if use_wandb_logging:
         run.finish()
+
+
+if __name__ == '__main__':
+    main()
