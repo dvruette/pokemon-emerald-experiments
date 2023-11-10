@@ -15,11 +15,19 @@ class EmeraldEnv(PyGBAEnv):
         self,
         gba: PyGBA,
         frames_path: str | Path | None = None,
+        frame_save_freq: int = 10,
+        early_stopping: bool = False,
+        patience: int = 1024,
         rank: int = 0,
         **kwargs,
     ):
         game_wrapper = CustomEmeraldWrapper()
         super().__init__(gba, game_wrapper, **kwargs)
+        self.frames_path = frames_path
+        self.frame_save_freq = frame_save_freq
+        self.early_stopping = early_stopping
+        self.patience = patience
+        self.rank = rank
 
         self.arrow_keys = [None, "up", "down", "right", "left"]
         # self.buttons = [None, "A", "B", "select", "start", "L", "R"]
@@ -30,9 +38,9 @@ class EmeraldEnv(PyGBAEnv):
         self.action_space = gym.spaces.Discrete(len(self.actions))
         
         self._total_reward = 0
-        
-        self.frames_path = frames_path
-        self.rank = rank
+        self._max_reward = 0
+        self._max_reward_step = 0
+        self.agent_stats
 
     def step(self, action_id):
         info = {}
@@ -40,7 +48,7 @@ class EmeraldEnv(PyGBAEnv):
         actions = self.get_action_by_id(action_id)
         actions = [KEY_MAP[a] for a in actions if a is not None]
 
-        if self.frames_path is not None:
+        if self.frames_path is not None and self.frame_save_freq > 0 and (self._step + 1) % self.frame_save_freq == 0:
             out_path = Path(self.frames_path) / f"{self.rank:02d}" / f"{self._step:06d}.jpg"
             if self._step == 0:
                 # delete old frames
@@ -68,27 +76,35 @@ class EmeraldEnv(PyGBAEnv):
 
         reward = 0
         done = False
-        truncated = False
-        if self.max_episode_steps is not None:
-            truncated = self._step >= self.max_episode_steps
+        truncated = self.check_if_done()
         if self.game_wrapper is not None:
             reward = self.game_wrapper.reward(self.gba, observation)
             done = done or self.game_wrapper.game_over(self.gba, observation)
             info.update(self.game_wrapper.info(self.gba, observation))
 
+        # the tensorboard will read out the agent_stats list and plot it
+        self.agent_stats.append(info["rewards"])
+
         self._total_reward += reward
+        if self._total_reward > self._max_reward:
+            self._max_reward = reward
+            self._max_reward_step = self._step
         self._step += 1
-        print(f"\r step={self._step} | {reward=:.3g} | total_reward={self._total_reward:.3g} | {done=} | {truncated=}", end="", flush=True)
+        reward_display = " | ".join(f"{k}={v:.3g}" for k, v in info["rewards"].items())
+        print(f"\r step={self._step} | {reward_display}", end="", flush=True)
 
         return observation, reward, done, truncated, info
     
     def check_if_done(self):
-        done = False
-        if self.game_wrapper is not None:
-            observation = self._get_observation()
-            done = self.game_wrapper.game_over(self.gba, observation)
-        return done
+        if self.max_episode_steps is not None and self._step >= self.max_episode_steps:
+            return True
+        if self.early_stopping and self._step - self._max_reward_step > self.patience:
+            return True
+        return False
 
     def reset(self, seed=None):
-        self._total_reward = 0
         return super().reset(seed=seed)
+        self._total_reward = 0
+        self._max_reward = 0
+        self._max_reward_step = 0
+        self.agent_stats = []
