@@ -25,6 +25,7 @@ def parse_args():
     parser.add_argument('--frameskip', type=int, default=23)
     parser.add_argument('--repeat_action_prob', type=float, default=0.1)
     parser.add_argument('--episode_length', type=int, default=2048 * 10)
+    parser.add_argument('--early_stopping_patience', type=int, default=2048)
     parser.add_argument('--learn_steps', type=int, default=40)
     parser.add_argument('--checkpoint', type=str, default=None)
     parser.add_argument('--num_cpu', type=int, default=24)
@@ -56,6 +57,9 @@ def make_gba_env(rank, env_conf, seed=0):
             frameskip=env_conf['frameskip'],
             max_episode_steps=env_conf['max_steps'],
             frames_path=env_conf['frames_path'],
+            early_stopping=env_conf['early_stopping_patience'] > 0,
+            repeat_action_probability=env_conf['repeat_action_probability'],
+            patience=env_conf['early_stopping_patience'],
             rank=rank,
         )
         env.reset()
@@ -83,6 +87,7 @@ def main(args):
         'max_steps': ep_length, 
         'frameskip': args.frameskip,
         'repeat_action_probability': args.repeat_action_prob,
+        'early_stopping_patience': args.early_stopping_patience,
     }
     
     print(env_config)

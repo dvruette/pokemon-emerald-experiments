@@ -15,7 +15,7 @@ class EmeraldEnv(PyGBAEnv):
         self,
         gba: PyGBA,
         frames_path: str | Path | None = None,
-        frame_save_freq: int = 10,
+        frame_save_freq: int = 1,
         early_stopping: bool = False,
         patience: int = 1024,
         rank: int = 0,
