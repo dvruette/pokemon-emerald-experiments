@@ -1,7 +1,8 @@
+import argparse
+import uuid
 from datetime import datetime
 from os.path import exists
 from pathlib import Path
-import uuid
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import SubprocVecEnv
@@ -9,11 +10,28 @@ from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList
 from tensorboard_callback import TensorboardCallback
 from pygba import PyGBA
+import tensorboard
 
 from emerald_env import EmeraldEnv
 
 import mgba.log
 mgba.log.silence()
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--gba_path', type=str, default='roms/pokemon_emerald.gba')
+    parser.add_argument('--init_state', type=str, default=None)
+    parser.add_argument('--output_dir', type=str, default='outputs')
+    parser.add_argument('--frameskip', type=int, default=23)
+    parser.add_argument('--repeat_action_prob', type=float, default=0.1)
+    parser.add_argument('--episode_length', type=int, default=2048 * 10)
+    parser.add_argument('--learn_steps', type=int, default=40)
+    parser.add_argument('--checkpoint', type=str, default=None)
+    parser.add_argument('--num_cpu', type=int, default=24)
+    parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--use_wandb_logging', action='store_true')
+    return parser.parse_args()
+
 
 def load_pokemon_emerald(gba_file: str, save_file: str | None):
     gba = PyGBA.load(gba_file, save_file=save_file)
@@ -40,17 +58,16 @@ def make_gba_env(rank, env_conf, seed=0):
             frames_path=env_conf['frames_path'],
             rank=rank,
         )
-        env.reset(seed=seed + rank)
+        env.reset()
         return env
-    set_random_seed(seed)
+    set_random_seed(seed + rank)
     return _init
 
 
-def main():
-    use_wandb_logging = False
-    ep_length = 2048 * 10
+def main(args):
+    ep_length = args.episode_length
     sess_id = str(uuid.uuid4())[:8]
-    sess_path = Path(f'outputs/{datetime.now().strftime("%Y-%m-%d/%H-%M-%S")}_{sess_id}')
+    sess_path = Path(f'{args.output_dir}/{datetime.now().strftime("%Y-%m-%d/%H-%M-%S")}_{sess_id}')
     sess_path.mkdir(parents=True, exist_ok=True)
     frames_path = sess_path / 'frames'
 
@@ -61,24 +78,24 @@ def main():
         # 'use_screen_explore': True, 'reward_scale': 4, 'extra_buttons': False,
         # 'explore_weight': 3, # 2.5
         'gba_path': 'roms/pokemon_emerald.gba',
-        # 'init_state': 'roms/pokemon_emerald.sav',
-        'init_state': None,
+        'init_state': args.init_state,
         'frames_path': frames_path,
         'max_steps': ep_length, 
-        'frameskip': 23,
+        'frameskip': args.frameskip,
+        'repeat_action_probability': args.repeat_action_prob,
     }
     
     print(env_config)
     
-    num_cpu = 24  # Also sets the number of episodes per training iteration
-    # env = SubprocVecEnv([make_env(i, env_config) for i in range(num_cpu)])
+    num_cpu = args.num_cpu  # Also sets the number of episodes per training iteration
     env = SubprocVecEnv([make_gba_env(i, env_config) for i in range(num_cpu)])
     
-    checkpoint_callback = CheckpointCallback(save_freq=ep_length, save_path=sess_path, name_prefix='poke')
-    
-    callbacks = [checkpoint_callback, TensorboardCallback()]
+    callbacks = [
+        CheckpointCallback(save_freq=ep_length, save_path=sess_path, name_prefix='poke'),
+        TensorboardCallback(),
+    ]
 
-    if use_wandb_logging:
+    if args.use_wandb_logging:
         import wandb
         from wandb.integration.sb3 import WandbCallback
         run = wandb.init(
@@ -91,7 +108,6 @@ def main():
         )
         callbacks.append(WandbCallback())
 
-    learn_steps = 40
     # put a checkpoint here you want to start from
     file_name = 'session_e41c9eff/poke_38207488_steps' 
     
@@ -106,12 +122,13 @@ def main():
     else:
         model = PPO('CnnPolicy', env, verbose=1, n_steps=ep_length // 8, batch_size=128, n_epochs=3, gamma=0.998, tensorboard_log=sess_path)
     
-    for i in range(learn_steps):
+    for i in range(args.learn_steps):
         model.learn(total_timesteps=(ep_length)*num_cpu*1000, callback=CallbackList(callbacks))
 
-    if use_wandb_logging:
+    if args.use_wandb_logging:
         run.finish()
 
 
 if __name__ == '__main__':
-    main()
+    args = parse_args()
+    main(args)
