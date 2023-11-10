@@ -40,7 +40,7 @@ class EmeraldEnv(PyGBAEnv):
         self._total_reward = 0
         self._max_reward = 0
         self._max_reward_step = 0
-        self.agent_stats
+        self.agent_stats = []
 
     def step(self, action_id):
         info = {}
@@ -50,7 +50,7 @@ class EmeraldEnv(PyGBAEnv):
 
         if self.frames_path is not None and self.frame_save_freq > 0 and (self._step + 1) % self.frame_save_freq == 0:
             out_path = Path(self.frames_path) / f"{self.rank:02d}" / f"{self._step:06d}.jpg"
-            if self._step == 0:
+            if self._step == 0 or self._step + 1 == self.frame_save_freq:
                 # delete old frames
                 if out_path.parent.exists():
                     shutil.rmtree(out_path.parent)
