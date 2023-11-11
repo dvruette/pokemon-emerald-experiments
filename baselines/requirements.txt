@@ -96,3 +96,4 @@ wcwidth==0.2.6
 webencodings==0.5.1
 pygba>=0.2.6
 mgba==0.10.2
+sb3-contrib==2.1.0

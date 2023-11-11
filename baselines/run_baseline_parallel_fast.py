@@ -5,6 +5,7 @@ from os.path import exists
 from pathlib import Path
 
 from stable_baselines3 import PPO
+from sb3_contrib import RecurrentPPO
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList
@@ -131,7 +132,7 @@ def main(args):
         model.rollout_buffer.n_envs = num_cpu
         model.rollout_buffer.reset()
     else:
-        model = PPO('CnnPolicy', env, verbose=1, n_steps=2048, batch_size=128, n_epochs=3, gamma=0.9998, tensorboard_log=sess_path)
+        model = RecurrentPPO('CnnLstmPolicy', env, verbose=1, n_steps=2048, batch_size=128, n_epochs=3, gamma=0.9998, tensorboard_log=sess_path)
     
     for i in range(args.learn_steps):
         model.learn(total_timesteps=(ep_length)*num_cpu*1000, callback=CallbackList(callbacks))
