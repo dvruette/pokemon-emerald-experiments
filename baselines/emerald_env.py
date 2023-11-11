@@ -16,6 +16,7 @@ class EmeraldEnv(PyGBAEnv):
         gba: PyGBA,
         rank: int = 0,
         frames_path: str | Path | None = None,
+        save_episode_frames: bool = False,
         frame_save_freq: int = 1,
         early_stopping: bool = False,
         patience: int = 1024,
@@ -26,6 +27,7 @@ class EmeraldEnv(PyGBAEnv):
         game_wrapper = CustomEmeraldWrapper()
         super().__init__(gba, game_wrapper, **kwargs)
         self.rank = rank
+        self.save_episode_frames = save_episode_frames
         self.frames_path = frames_path
         self.frame_save_freq = frame_save_freq
         self.early_stopping = early_stopping
@@ -55,17 +57,19 @@ class EmeraldEnv(PyGBAEnv):
         actions = [KEY_MAP[a] for a in actions if a is not None]
 
         if self.frames_path is not None and self.frame_save_freq > 0 and (self._step + 1) % self.frame_save_freq == 0:
-            out_path = Path(self.frames_path) / f"{self.rank:02d}" / f"{self._step:06d}.jpg"
-            if self._step == 0 or self._step + 1 == self.frame_save_freq:
-                # delete old frames
-                if out_path.parent.exists():
-                    shutil.rmtree(out_path.parent)
-
-            out_path.parent.mkdir(parents=True, exist_ok=True)
             img = self._framebuffer.to_pil().convert("RGB")
-            img.save(out_path)
+            if self.save_episode_frames:
+                out_path = Path(self.frames_path) / f"{self.rank:02d}" / f"{self._step:06d}.jpg"
+                if self._step == 0 or self._step + 1 == self.frame_save_freq:
+                    # delete old frames
+                    if out_path.parent.exists():
+                        shutil.rmtree(out_path.parent)
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                img.save(out_path)
+            # always save the most recent frame
             thumbnail_path = Path(self.frames_path) / f"{self.rank:02d}.jpg"
-            thumbnail_path.write_bytes(out_path.read_bytes())
+            thumbnail_path.parent.mkdir(parents=True, exist_ok=True)
+            img.save(thumbnail_path)
 
         if np.random.random() > self.repeat_action_probability:
             self.gba.core.set_keys(*actions)
