@@ -32,27 +32,34 @@ class CustomEmeraldWrapper(PokemonEmerald):
 
     def get_exploration_reward(self, state):
         location = state.get("location", None)
-        if location is not None:
+        pos = state.get("pos", None)
+        if location is not None and pos is not None:
             map_id = (location["mapGroup"], location["mapNum"])
-            if map_id not in self._location_store:
-                self._location_store[map_id] = hnswlib.Index(space='l2', dim=2)
-                self._location_store[map_id].init_index(max_elements=self.max_hnsw_count, ef_construction=100, M=16)
-            index = self._location_store[map_id]
-            pos = np.array([[location["x"], location["y"]]])
-            if index.get_current_count() == 0:
-                index.add_items(pos, np.array([index.get_current_count()]))
-            else:
-                labels, distances = index.knn_query(pos, k = 1)
-                if distances[0][0] >= self.exploration_dist_thresh:
-                    # print(f"distances[0][0] : {distances[0][0]} similar_frame_dist : {self.similar_frame_dist}")
-                    index.add_items(
-                        pos, np.array([index.get_current_count()])
-                    )
+            if map_id != (0, 0):  # map_id is set to 0 while loading a new area
+                if map_id not in self._location_store:
+                    self._location_store[map_id] = hnswlib.Index(space='l2', dim=2)
+                    self._location_store[map_id].init_index(max_elements=self.max_hnsw_count, ef_construction=100, M=16)
+                index = self._location_store[map_id]
+                pos = np.array([pos["x"], pos["y"]])
+                if index.get_current_count() == 0:
+                    index.add_items(pos, np.array([index.get_current_count()]))
+                else:
+                    labels, distances = index.knn_query(pos, k = 1)
+                    if distances[0][0] >= self.exploration_dist_thresh:
+                        # print(f"distances[0][0] : {distances[0][0]} similar_frame_dist : {self.similar_frame_dist}")
+                        index.add_items(
+                            pos, np.array([index.get_current_count()])
+                        )
         return sum(index.get_current_count() for index in self._location_store.values()) * self.exploration_reward
 
     def reward(self, gba, observation):
         self._game_state.update(self.game_state(gba))
         state = self._game_state
+
+        # Game state can get funky during loading screens, so we just wait until
+        # we get a valid observation.
+        if observation is not None and observation.sum() < 1:
+            return 0.0
 
         # don't give any reward for visiting the first town, as the player spawns there
         visited_cities = max(0, sum(state.get("visited_cities", {}).values()) - 1)
@@ -73,12 +80,12 @@ class CustomEmeraldWrapper(PokemonEmerald):
 
         prev_reward = self._prev_reward
         self._prev_reward = reward
-        self._prev_game_state = state.copy()
         return reward - prev_reward
     
     def reset(self, gba):
         self._game_state = {}
         self._location_store = {}
+        self._prev_reward = 0.0
         self._prev_reward = self.reward(gba, None)
     
     def info(self, gba, observation):
