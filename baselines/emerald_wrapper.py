@@ -8,7 +8,8 @@ class CustomEmeraldWrapper(PokemonEmerald):
         badge_reward: float = 10.0,
         champion_reward: float = 100.0,
         visit_city_reward: float = 5.0,
-        money_reward: float = 0.0005,
+        money_gained_reward: float = 0.001,
+        money_lost_reward: float = 0.0001,
         seen_pokemon_reward: float = 0.2,
         caught_pokemon_reward: float = 1.0,
         exploration_reward: float = 0.01,
@@ -18,7 +19,8 @@ class CustomEmeraldWrapper(PokemonEmerald):
         self.badge_reward = badge_reward
         self.champion_reward = champion_reward
         self.visit_city_reward = visit_city_reward
-        self.money_reward = money_reward
+        self.money_gained_reward = money_gained_reward
+        self.money_lost_reward = money_lost_reward
         self.seen_pokemon_reward = seen_pokemon_reward
         self.caught_pokemon_reward = caught_pokemon_reward
         self.exploration_reward = exploration_reward
@@ -65,14 +67,21 @@ class CustomEmeraldWrapper(PokemonEmerald):
         visited_cities = max(0, sum(state.get("visited_cities", {}).values()) - 1)
         # player starts with $3000 cash
         earned_money = (state.get("money", 3000) - 3000)
+        # in case the the game state glitches and gives the player a lot of money, we ignore values over 100k
+        if earned_money > 0 and earned_money < 100_000:
+            money_rew = earned_money * self.money_gained_reward
+        elif earned_money < 0:
+            money_rew = earned_money * self.money_lost_reward
+        else:
+            money_rew = 0.0
+
         self._reward_info = {
             "badge_rew": state.get("num_badges", 0) * self.badge_reward,
             "visit_city_rew": visited_cities * self.visit_city_reward,
             "seen_pokemon_rew": state.get("num_seen_pokemon", 0) * self.seen_pokemon_reward,
             "caught_pokemon_rew": state.get("num_caught_pokemon", 0) * self.caught_pokemon_reward,
             "exploration_rew": self.get_exploration_reward(state),
-            # the game state sometimes glitches and gives the player a lot of money, so we ignore values over 100k
-            "money_rew": earned_money * self.money_reward if earned_money < 100_000 else self._reward_info.get("money_rew", 0.0),
+            "money_rew": money_rew,
             # "champion_rew": state.get("is_champion", 0) * self.champion_reward,
         }
         reward = sum(self._reward_info.values())
