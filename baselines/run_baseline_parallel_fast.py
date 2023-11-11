@@ -4,6 +4,7 @@ from datetime import datetime
 from os.path import exists
 from pathlib import Path
 
+import torch
 from stable_baselines3 import PPO
 from sb3_contrib import RecurrentPPO
 from stable_baselines3.common.vec_env import SubprocVecEnv
@@ -132,7 +133,25 @@ def main(args):
         model.rollout_buffer.n_envs = num_cpu
         model.rollout_buffer.reset()
     else:
-        model = RecurrentPPO('CnnLstmPolicy', env, verbose=1, n_steps=2048, batch_size=128, n_epochs=3, gamma=0.9998, tensorboard_log=sess_path)
+        model = RecurrentPPO(
+            'CnnLstmPolicy',
+            env,
+            learning_rate=0.0003,
+            n_steps=2048,
+            batch_size=128,
+            n_epochs=3,
+            gamma=0.9999,
+            clip_range=0.1,
+            target_kl=0.01,
+            verbose=1,
+            # policy_kwargs=dict(
+            #     activation_fn=torch.nn.ReLU,
+            #     lstm_hidden_size=128,
+            #     share_features_extractor=True,
+            #     optimizer_class=torch.optim.AdamW,
+            #     tensorboard_log=sess_path,
+            # ),
+        )
     
     for i in range(args.learn_steps):
         model.learn(total_timesteps=(ep_length)*num_cpu*1000, callback=CallbackList(callbacks))
