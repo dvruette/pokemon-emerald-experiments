@@ -10,6 +10,7 @@ from sb3_contrib import RecurrentPPO
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList
+from stable_baselines3.common.atari_wrappers import WarpFrame
 from tensorboard_callback import TensorboardCallback
 from pygba import PyGBA
 import tensorboard
@@ -22,7 +23,7 @@ mgba.log.silence()
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--gba_path', type=str, default='roms/pokemon_emerald.gba')
-    parser.add_argument('--init_state', type=str, default=None)
+    parser.add_argument('--init_state', type=str, default='saves/pokemon_emerald.new_game.sav')
     parser.add_argument('--output_dir', type=str, default='outputs')
     parser.add_argument('--frameskip', type=int, default=24)
     parser.add_argument('--sticky_action_prob', type=float, default=0.2)
@@ -31,6 +32,7 @@ def parse_args():
     parser.add_argument('--early_stopping_patience', type=int, default=2048 * 4)
     parser.add_argument('--early_stopping_penalty', type=float, default=0.1)
     parser.add_argument('--learn_steps', type=int, default=40)
+    parser.add_argument('--use_atari_wrapper', type=int, default=1)
     parser.add_argument('--checkpoint', type=str, default=None)
     parser.add_argument('--num_workers', type=int, default=24)
     parser.add_argument('--save_freq', type=int, default=2048 * 10)
@@ -70,6 +72,9 @@ def make_gba_env(rank, env_conf, seed=0):
             patience=env_conf['early_stopping_patience'],
             early_stopping_penalty=env_conf['early_stopping_penalty'],
         )
+        # GBA screen is 240x160
+        if env_conf['use_atari_wrapper'] == 1:
+            env = WarpFrame(env, width=120, height=80)
         env.reset()
         return env
     set_random_seed(seed + rank)
@@ -93,6 +98,7 @@ def main(args):
         action_noise=args.action_noise,
         early_stopping_patience=args.early_stopping_patience,
         early_stopping_penalty=args.early_stopping_penalty,
+        use_atari_wrapper=args.use_atari_wrapper,
     )
     
     print(env_config)
@@ -119,13 +125,14 @@ def main(args):
         callbacks.append(WandbCallback())
 
     ppo_args = dict(
-        learning_rate=5e-5,
+        learning_rate=1e-4,
         n_steps=2048,
-        batch_size=1024,
+        batch_size=2048,
         n_epochs=3,
-        gamma=0.9995,
+        gamma=0.995,
+        gae_lambda=0.97,
         clip_range=0.1,
-        target_kl=0.05,
+        target_kl=0.02,
         ent_coef=0.001,
         vf_coef=0.8,
     )
@@ -145,10 +152,10 @@ def main(args):
             tensorboard_log=sess_path,
             policy_kwargs=dict(
                 activation_fn=torch.nn.ReLU,
-                lstm_hidden_size=1024,
+                lstm_hidden_size=256,
                 share_features_extractor=True,
-                optimizer_class=torch.optim.AdamW,
-                optimizer_kwargs=dict(weight_decay=0.01, eps=1e-12),
+                optimizer_class=torch.optim.Adam,
+                optimizer_kwargs=dict(weight_decay=0.0, eps=1e-12),
             ),
             **ppo_args,
         )
