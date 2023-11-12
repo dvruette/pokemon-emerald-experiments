@@ -6,10 +6,15 @@ class CustomEmeraldWrapper(PokemonEmerald):
     def __init__(
         self,
         badge_reward: float = 10.0,
+        pokedex_reward: float = 10,
+        pokenav_reward: float = 10,
         champion_reward: float = 100.0,
         visit_city_reward: float = 5.0,
         money_gained_reward: float = 0.001,
-        money_lost_reward: float = 0.0001,
+        # setting this below half of money_gained_reward leaves an exploit
+        # where the agent can just buy and sell stuff at the pokemart..
+        # but setting it too high will make it scared of battling
+        money_lost_reward: float = 0.0004,
         seen_pokemon_reward: float = 0.2,
         caught_pokemon_reward: float = 1.0,
         exploration_reward: float = 0.01,
@@ -17,6 +22,8 @@ class CustomEmeraldWrapper(PokemonEmerald):
         max_hnsw_count: int = 100000,
     ):
         self.badge_reward = badge_reward
+        self.pokedex_reward = pokedex_reward
+        self.pokenav_reward = pokenav_reward
         self.champion_reward = champion_reward
         self.visit_city_reward = visit_city_reward
         self.money_gained_reward = money_gained_reward
@@ -76,12 +83,14 @@ class CustomEmeraldWrapper(PokemonEmerald):
             money_rew = 0.0
 
         self._reward_info = {
-            "badge_rew": state.get("num_badges", 0) * self.badge_reward,
             "visit_city_rew": visited_cities * self.visit_city_reward,
             "seen_pokemon_rew": state.get("num_seen_pokemon", 0) * self.seen_pokemon_reward,
             "caught_pokemon_rew": state.get("num_caught_pokemon", 0) * self.caught_pokemon_reward,
             "exploration_rew": self.get_exploration_reward(state),
             "money_rew": money_rew,
+            "pokedex_rew": (1.0 if state.get("has_pokedex", False) else 0.0) * self.pokedex_reward,
+            "pokenav_rew": (1.0 if state.get("has_pokenav", False) else 0.0) * self.pokenav_reward,
+            "badge_rew": state.get("num_badges", 0) * self.badge_reward,
             # "champion_rew": state.get("is_champion", 0) * self.champion_reward,
         }
         reward = sum(self._reward_info.values())
