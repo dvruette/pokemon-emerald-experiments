@@ -14,7 +14,7 @@ class CustomEmeraldWrapper(PokemonEmerald):
         # setting this below half of money_gained_reward leaves an exploit
         # where the agent can just buy and sell stuff at the pokemart..
         # but setting it too high will make it scared of battling
-        money_lost_reward: float = 0.0004,
+        money_lost_reward: float = 0.0003,
         seen_pokemon_reward: float = 0.2,
         caught_pokemon_reward: float = 1.0,
         exploration_reward: float = 0.01,
