@@ -22,9 +22,12 @@ class EmeraldEnv(PyGBAEnv):
         patience: int = 1024,
         early_stopping_penalty: float = 0.0,
         action_noise: float = 0.0,
+        reset_to_new_game_prob: float = 1.0,
+        save_intermediate_state_prob: float = 0.001,
         **kwargs,
     ):
         game_wrapper = CustomEmeraldWrapper()
+        self._intermediate_state = None
         super().__init__(gba, game_wrapper, **kwargs)
         self.rank = rank
         self.save_episode_frames = save_episode_frames
@@ -34,6 +37,8 @@ class EmeraldEnv(PyGBAEnv):
         self.patience = patience
         self.early_stopping_penalty = early_stopping_penalty
         self.action_noise = action_noise
+        self.reset_to_new_game_prob = reset_to_new_game_prob
+        self.save_intermediate_state_prob = save_intermediate_state_prob
 
         self.arrow_keys = [None, "up", "down", "right", "left"]
         # self.buttons = [None, "A", "B", "select", "start", "L", "R"]
@@ -59,7 +64,7 @@ class EmeraldEnv(PyGBAEnv):
         if self.frames_path is not None and self.frame_save_freq > 0 and (self._step + 1) % self.frame_save_freq == 0:
             img = self._framebuffer.to_pil().convert("RGB")
             if self.save_episode_frames:
-                out_path = Path(self.frames_path) / f"{self.rank:02d}" / f"{self._step:06d}.jpg"
+                out_path = Path(self.frames_path) / f"{self.rank:02d}" / f"{self._step:06d}.png"
                 if self._step == 0 or self._step + 1 == self.frame_save_freq:
                     # delete old frames
                     if out_path.parent.exists():
@@ -67,7 +72,7 @@ class EmeraldEnv(PyGBAEnv):
                 out_path.parent.mkdir(parents=True, exist_ok=True)
                 img.save(out_path)
             # always save the most recent frame
-            thumbnail_path = Path(self.frames_path) / f"{self.rank:02d}.jpg"
+            thumbnail_path = Path(self.frames_path) / f"{self.rank:02d}.png"
             thumbnail_path.parent.mkdir(parents=True, exist_ok=True)
             img.save(thumbnail_path)
 
@@ -83,6 +88,10 @@ class EmeraldEnv(PyGBAEnv):
             self.gba.core.run_frame()
             pass
         observation = self._get_observation()
+
+        # save intermediate state
+        if np.random.random() < self.save_intermediate_state_prob:
+            self._intermediate_state = self.gba.core.save_raw_state()
 
         # reward calculation
         reward = 0
@@ -125,9 +134,21 @@ class EmeraldEnv(PyGBAEnv):
             return self.game_wrapper.game_over(self.gba, observation)
         return False
 
-    def reset(self, seed=None):
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
         self._total_reward = 0
         self._max_reward = 0
         self._max_reward_step = 0
         self.agent_stats = []
-        return super().reset(seed=seed)
+
+        if self._intermediate_state is not None and np.random.random() >= self.reset_to_new_game_prob:
+            self.gba.core.load_raw_state(self._intermediate_state)
+            self.gba.core.run_frame()
+
+        observation = self._get_observation()
+        
+        info = {}
+        if self.game_wrapper is not None:
+            self.game_wrapper.reset(self.gba)
+            info.update(self.game_wrapper.info(self.gba, observation))
+        return observation, info
