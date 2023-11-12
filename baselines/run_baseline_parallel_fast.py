@@ -27,14 +27,16 @@ def parse_args():
     parser.add_argument('--frameskip', type=int, default=24)
     parser.add_argument('--sticky_action_prob', type=float, default=0.2)
     parser.add_argument('--action_noise', type=float, default=0.0)
-    parser.add_argument('--episode_length', type=int, default=2048 * 8)
+    parser.add_argument('--episode_length', type=int, default=2048 * 32)
     parser.add_argument('--early_stopping_patience', type=int, default=2048 * 4)
     parser.add_argument('--early_stopping_penalty', type=float, default=0.1)
     parser.add_argument('--learn_steps', type=int, default=40)
     parser.add_argument('--checkpoint', type=str, default=None)
-    parser.add_argument('--num_cpu', type=int, default=24)
-    parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--num_workers', type=int, default=24)
+    parser.add_argument('--save_freq', type=int, default=2048 * 10)
+    parser.add_argument('--resume_checkpoint', type=str, default=None)
     parser.add_argument('--use_wandb_logging', action='store_true')
+    parser.add_argument('--seed', type=int, default=0)
     return parser.parse_args()
 
 
@@ -81,30 +83,25 @@ def main(args):
     sess_path.mkdir(parents=True, exist_ok=True)
     frames_path = sess_path / 'frames'
 
-    env_config = {
-        # 'headless': True, 'save_final_state': True, 'early_stop': False,
-        # 'print_rewards': True, 'save_video': False, 'fast_video': True, 'session_path': sess_path,
-        # 'gb_path': 'PokemonRed.gb', 'debug': False, 'sim_frame_dist': 2_000_000.0, 
-        # 'use_screen_explore': True, 'reward_scale': 4, 'extra_buttons': False,
-        # 'explore_weight': 3, # 2.5
-        'gba_path': 'roms/pokemon_emerald.gba',
-        'init_state': args.init_state,
-        'frames_path': frames_path,
-        'max_steps': ep_length, 
-        'frameskip': args.frameskip,
-        'sticky_action_probability': args.sticky_action_prob,
-        'action_noise': args.action_noise,
-        'early_stopping_patience': args.early_stopping_patience,
-        'early_stopping_penalty': args.early_stopping_penalty,
-    }
+    env_config = dict(
+        gba_path='roms/pokemon_emerald.gba',
+        init_state=args.init_state,
+        frames_path=frames_path,
+        max_steps=ep_length, 
+        frameskip=args.frameskip,
+        sticky_action_probability=args.sticky_action_prob,
+        action_noise=args.action_noise,
+        early_stopping_patience=args.early_stopping_patience,
+        early_stopping_penalty=args.early_stopping_penalty,
+    )
     
     print(env_config)
     
-    num_cpu = args.num_cpu  # Also sets the number of episodes per training iteration
-    env = SubprocVecEnv([make_gba_env(i, env_config) for i in range(num_cpu)])
+    num_workers = args.num_workers  # Also sets the number of episodes per training iteration
+    env = SubprocVecEnv([make_gba_env(i, env_config) for i in range(num_workers)])
     
     callbacks = [
-        CheckpointCallback(save_freq=ep_length, save_path=sess_path, name_prefix='poke'),
+        CheckpointCallback(save_freq=args.save_freq, save_path=sess_path, name_prefix='poke'),
         TensorboardCallback(),
     ]
 
@@ -121,40 +118,43 @@ def main(args):
         )
         callbacks.append(WandbCallback())
 
-    # put a checkpoint here you want to start from
-    file_name = 'session_e41c9eff/poke_38207488_steps' 
+    ppo_args = dict(
+        learning_rate=5e-5,
+        n_steps=2048,
+        batch_size=1024,
+        n_epochs=3,
+        gamma=0.9995,
+        clip_range=0.1,
+        target_kl=0.05,
+        ent_coef=0.001,
+        vf_coef=0.8,
+    )
     
-    if exists(file_name + '.zip'):
-        print('\nloading checkpoint')
-        model = PPO.load(file_name, env=env)
-        model.n_steps = ep_length
-        model.n_envs = num_cpu
+    if args.resume_checkpoint is not None:
+        print(f'Resuming from checkpoint: {args.resume_checkpoint}')
+        model = RecurrentPPO.load(args.resume_checkpoint, env=env, **ppo_args)
+        model.n_envs = num_workers
         model.rollout_buffer.buffer_size = ep_length
-        model.rollout_buffer.n_envs = num_cpu
+        model.rollout_buffer.n_envs = num_workers
         model.rollout_buffer.reset()
     else:
         model = RecurrentPPO(
             'CnnLstmPolicy',
             env,
-            learning_rate=0.0003,
-            n_steps=2048,
-            batch_size=128,
-            n_epochs=3,
-            gamma=0.9999,
-            clip_range=0.1,
-            target_kl=0.01,
             verbose=1,
-            # policy_kwargs=dict(
-            #     activation_fn=torch.nn.ReLU,
-            #     lstm_hidden_size=128,
-            #     share_features_extractor=True,
-            #     optimizer_class=torch.optim.AdamW,
-            #     tensorboard_log=sess_path,
-            # ),
+            tensorboard_log=sess_path,
+            policy_kwargs=dict(
+                activation_fn=torch.nn.ReLU,
+                lstm_hidden_size=1024,
+                share_features_extractor=True,
+                optimizer_class=torch.optim.AdamW,
+                optimizer_kwargs=dict(weight_decay=0.01, eps=1e-12),
+            ),
+            **ppo_args,
         )
     
     for i in range(args.learn_steps):
-        model.learn(total_timesteps=(ep_length)*num_cpu*1000, callback=CallbackList(callbacks))
+        model.learn(total_timesteps=(ep_length)*num_workers*1000, callback=CallbackList(callbacks))
 
     if args.use_wandb_logging:
         run.finish()
