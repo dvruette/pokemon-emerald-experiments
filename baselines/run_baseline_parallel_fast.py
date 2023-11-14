@@ -30,7 +30,7 @@ def parse_args():
     parser.add_argument('--action_noise', type=float, default=0.0)
     parser.add_argument('--episode_length', type=int, default=2048 * 32)
     parser.add_argument('--early_stopping_patience', type=int, default=2048 * 4)
-    parser.add_argument('--early_stopping_penalty', type=float, default=0.1)
+    parser.add_argument('--early_stopping_penalty', type=float, default=0.0)
     parser.add_argument('--learn_steps', type=int, default=40)
     parser.add_argument('--use_atari_wrapper', type=int, default=1)
     parser.add_argument('--checkpoint', type=str, default=None)
@@ -99,6 +99,7 @@ def main(args):
         early_stopping_patience=args.early_stopping_patience,
         early_stopping_penalty=args.early_stopping_penalty,
         use_atari_wrapper=args.use_atari_wrapper,
+        reset_to_new_game_prob=0.5,
     )
     
     print(env_config)
@@ -133,7 +134,7 @@ def main(args):
         gae_lambda=0.97,
         clip_range=0.1,
         target_kl=0.02,
-        ent_coef=0.001,
+        ent_coef=0.003,
         vf_coef=0.8,
     )
     
