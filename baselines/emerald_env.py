@@ -115,7 +115,7 @@ class EmeraldEnv(PyGBAEnv):
         truncated = self.check_if_truncated()
 
         self._step += 1
-        reward_display = " | ".join(f"{k}={v:.3f}" for k, v in info["rewards"].items())
+        reward_display = " | ".join(f"{k}={v:.2f}" for k, v in info["rewards"].items())
         print(f"\r step={self._step:5d} | {reward_display}", end="", flush=True)
         return observation, reward, done, truncated, info
     
