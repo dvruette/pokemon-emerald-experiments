@@ -27,7 +27,7 @@ class CustomEmeraldWrapper(GameWrapper):
         seen_pokemon_reward: float = 0.2,
         caught_pokemon_reward: float = 1.0,
         trainer_beat_reward: float = 1.0,
-        event_reward: float = 1.0,
+        event_reward: float = 0.1,
         exp_reward_shape: float = 0.3,
         exp_reward_scale: float = 0.75,
         exploration_reward: float = 0.01,

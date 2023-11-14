@@ -129,13 +129,13 @@ def main(args):
         learning_rate=1e-4,
         n_steps=2048,
         batch_size=2048,
-        n_epochs=3,
-        gamma=0.995,
+        n_epochs=4,
+        gamma=0.998,
         gae_lambda=0.97,
-        clip_range=0.1,
-        target_kl=0.02,
-        ent_coef=0.003,
-        vf_coef=0.8,
+        clip_range=0.15,
+        target_kl=0.05,
+        ent_coef=0.005,
+        vf_coef=1.0,
     )
     
     if args.resume_checkpoint is not None:
