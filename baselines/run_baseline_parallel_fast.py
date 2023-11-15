@@ -116,26 +116,27 @@ def main(args):
         import wandb
         from wandb.integration.sb3 import WandbCallback
         run = wandb.init(
-            project="pokemon-train",
+            project="pokemon-rl",
             id=sess_id,
             config=env_config,
             sync_tensorboard=True,  
             monitor_gym=True,  
             save_code=True,
+            magic=True,
         )
         callbacks.append(WandbCallback())
 
     ppo_args = dict(
-        learning_rate=1e-4,
+        learning_rate=2e-4,
         n_steps=2048,
         batch_size=2048,
-        n_epochs=4,
-        gamma=0.998,
+        n_epochs=3,
+        gamma=0.995,
         gae_lambda=0.97,
-        clip_range=0.15,
-        target_kl=0.05,
-        ent_coef=0.005,
-        vf_coef=1.0,
+        clip_range=0.1,
+        target_kl=0.025,
+        ent_coef=0.008,
+        vf_coef=0.75,
     )
     
     if args.resume_checkpoint is not None:
