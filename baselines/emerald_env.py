@@ -23,7 +23,7 @@ class EmeraldEnv(PyGBAEnv):
         early_stopping_penalty: float = 0.0,
         action_noise: float = 0.0,
         reset_to_new_game_prob: float = 1.0,
-        save_intermediate_state_prob: float = 0.001,
+        save_intermediate_state_prob: float = 1e-4,
         **kwargs,
     ):
         game_wrapper = CustomEmeraldWrapper()
@@ -105,8 +105,6 @@ class EmeraldEnv(PyGBAEnv):
         if self._total_reward > self._max_reward:
             self._max_reward = self._total_reward
             self._max_reward_step = self._step
-        
-        info["rewards"]["total_reward"] = self._total_reward
 
         # the tensorboard will read out the agent_stats list and plot it
         self.agent_stats.append(info["rewards"])
