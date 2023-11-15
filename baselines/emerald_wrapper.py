@@ -1,3 +1,4 @@
+from typing import Literal
 import hnswlib
 import numpy as np
 from pygba import GameWrapper, PyGBA
@@ -18,21 +19,23 @@ class CustomEmeraldWrapper(GameWrapper):
         pokedex_reward: float = 10,
         pokenav_reward: float = 10,
         champion_reward: float = 100.0,
-        visit_city_reward: float = 5.0,
-        money_gained_reward: float = 0.0,
+        visit_city_reward: float = 10.0,
+        money_gained_reward: float = 0,
         # setting this below half of money_gained_reward leaves an exploit
         # where the agent can just buy and sell stuff at the pokemart..
         # but setting it too high will make it scared of battling
-        money_lost_reward: float = 0.0,
+        money_lost_reward: float = 0,
         seen_pokemon_reward: float = 0.2,
         caught_pokemon_reward: float = 1.0,
-        trainer_beat_reward: float = 1.0,
-        event_reward: float = 0.1,
-        exp_reward_shape: float = 0.3,
-        exp_reward_scale: float = 0.75,
-        exploration_reward: float = 0.01,
+        trainer_beat_reward: float = 3.0,
+        event_reward: float = 0.075,
+        exp_reward_transform: Literal["linear", "sqrt", "log"] = "log",
+        exp_reward_shape: float = 0.5,
+        exp_reward_scale: float = 0.5,
+        exploration_reward: float = 0.02,
         exploration_dist_thresh: float = 6.0,  # GBA screen is 7x5 tiles
         max_hnsw_count: int = 100000,
+        reward_scale: float = 0.1,
     ):
         self.badge_reward = badge_reward
         self.pokedex_reward = pokedex_reward
@@ -45,8 +48,10 @@ class CustomEmeraldWrapper(GameWrapper):
         self.caught_pokemon_reward = caught_pokemon_reward
         self.trainer_beat_reward = trainer_beat_reward
         self.event_reward = event_reward
+        self.exp_reward_transform = exp_reward_transform
         self.exp_reward_shape = exp_reward_shape
         self.exp_reward_scale = exp_reward_scale
+        self.reward_scale = reward_scale
 
         self.exploration_reward = exploration_reward
         self.exploration_dist_thresh = exploration_dist_thresh
@@ -102,6 +107,18 @@ class CustomEmeraldWrapper(GameWrapper):
         experience_tables = read_experience_tables(gba)
         all_mons = list(map(lambda x: x["box"], state.get("party", []))) + state.get("boxes", [])
         total_gained_exp = sum(get_gained_exp(mon, species_info, experience_tables) for mon in all_mons)
+        if total_gained_exp >= 0:
+            if self.exp_reward_transform == "linear":
+                exp_reward = self.reward_scale * total_gained_exp
+            elif self.exp_reward_transform == "sqrt":
+                exp_reward = self.exp_reward_scale * total_gained_exp ** self.exp_reward_shape
+            elif self.exp_reward_transform == "log":
+                exp_reward = self.exp_reward_scale * np.log(self.exp_reward_shape * total_gained_exp + 1)
+        else:
+            print()
+            print(f"WARNING: total_gained_exp >= 0: {total_gained_exp}")
+            print()
+            exp_reward = self._reward_info.get("exp_rew", 0.0)
 
         # don't give any reward for visiting the first town, as the player spawns there
         visited_cities = max(0, sum(state.get("visited_cities", {}).values()) - 1)
@@ -127,7 +144,7 @@ class CustomEmeraldWrapper(GameWrapper):
             "champ_rew": state.get("is_champion", 0) * self.champion_reward,
             "trainer_rew": num_trainer_flags * self.trainer_beat_reward,
             "event_rew": self._total_script_flags * self.event_reward,
-            "exp_rew": self.exp_reward_scale * total_gained_exp ** self.exp_reward_shape,
+            "exp_rew": exp_reward,
         }
         reward = sum(self._reward_info.values())
         self._reward_info["total_reward"] = reward
@@ -135,7 +152,7 @@ class CustomEmeraldWrapper(GameWrapper):
         prev_reward = self._prev_reward
         self._prev_reward = reward
         self._prev_game_state = state.copy()
-        return reward - prev_reward
+        return self.reward_scale * (reward - prev_reward)
     
     def reset(self, gba: PyGBA):
         self._game_state = {}
