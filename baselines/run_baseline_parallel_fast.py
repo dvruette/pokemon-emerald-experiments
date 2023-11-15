@@ -13,7 +13,6 @@ from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList
 from stable_baselines3.common.atari_wrappers import WarpFrame
 from tensorboard_callback import TensorboardCallback
 from pygba import PyGBA
-import tensorboard
 
 from emerald_env import EmeraldEnv
 
