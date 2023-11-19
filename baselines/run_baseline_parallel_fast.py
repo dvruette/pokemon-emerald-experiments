@@ -128,7 +128,7 @@ def main(args):
             exp_reward_scale=5,
             exploration_reward=0.02,
             revisit_reward=0.01,
-            health_reward=0.05,
+            heal_reward=0.05,
             exploration_dist_thresh=6.0,  # GBA screen is 7x5 tiles
             reward_scale=1.0,
         )

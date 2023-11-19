@@ -24,9 +24,10 @@ class TensorboardCallback(BaseCallback):
     def _on_step(self) -> bool:
         
         for i in range(self.training_env.num_envs):
-            if self.training_env.unwrapped.env_method("check_if_done", indices=[i])[0]:
-                infos = self.training_env.unwrapped.get_attr("agent_stats", indices=[i])[0]
-                for key,val in infos[-1].items():
-                    self.logger.record_mean(f"env_stats/{key}", val)
+            infos = self.training_env.get_attr("agent_stats", indices=[i])[0]
+            for key,val in infos[-1].items():
+                self.logger.record_mean(f"env_stats/{key}", val)
+                if self.training_env.env_method("check_if_done", indices=[i])[0]:
+                    self.logger.record_mean(f"env_stats/episode_{key}", val)
 
         return True

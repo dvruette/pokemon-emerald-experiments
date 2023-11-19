@@ -22,16 +22,14 @@ class ExplorationTracker:
         self.distance_threshold = distance_threshold
         self.revisit_cooldown = revisit_cooldown
         self.max_hnsw_count = max_hnsw_count
-        self.location_store = {}
-        self.cooldown_store = {}
 
-        self.curr_step = 0
-        self.total_visits = 0
+        self.reset()
 
     def reset(self):
         self.location_store = {}
         self.cooldown_store = {}
         self.curr_step = 0
+        self.total_visits = 0
 
     def add_location(self, map_id, x, y):
         if map_id not in self.location_store:
@@ -40,22 +38,26 @@ class ExplorationTracker:
 
         index = self.location_store[map_id]
         pos = np.array([x, y])
-        label = index.get_current_count()
-        pos_hash = hash((map_id, label))
+        next_label = index.get_current_count()
+        pos_key = (map_id, next_label)
         if index.get_current_count() == 0:
-            index.add_items(pos, np.array([pos_hash]))
-            self.cooldown_store[pos_hash] = self.curr_step + self.cooldown_steps
+            index.add_items(pos, np.array([next_label]))
+            self.cooldown_store[pos_key] = self.curr_step + self.revisit_cooldown
             self.total_visits += 1
         else:
             labels, distances = index.knn_query(pos, k=1)
             label, dist = labels[0][0], distances[0][0]
+            key = (map_id, label)
             if dist < self.distance_threshold:
-                if self.cooldown_store[label] > self.curr_step:
-                    self.cooldown_store[label] = self.curr_step + self.cooldown_steps
+                if self.cooldown_store[key] <= self.curr_step:
+                    self.cooldown_store[key] = self.curr_step + self.revisit_cooldown
                     self.total_visits += 1
+                else:
+                    # don't let the current location cool down
+                    self.cooldown_store[key] += 1
             else:  # dist >= self.distance_threshold
-                index.add_items(pos, np.array([pos_hash]))
-                self.cooldown_store[pos_hash] = self.curr_step + self.cooldown_steps
+                index.add_items(pos, np.array([next_label]))
+                self.cooldown_store[pos_key] = self.curr_step + self.revisit_cooldown
                 self.total_visits += 1
     
     def update(self, location=None, pos=None):
@@ -122,7 +124,7 @@ class HealingTracker:
                 del self.curr_party[mon_id]
 
         for mon_id in self.curr_party.keys():
-            if mon_id in self.prev_party():
+            if mon_id in self.prev_party:
                 prev_hp, prev_max_hp = self.prev_party[mon_id]
                 curr_hp, curr_max_hp = self.curr_party[mon_id]
                 if prev_hp > 0:  # don't count healing from fainted pokemon
@@ -189,6 +191,7 @@ class CustomEmeraldWrapper(GameWrapper):
             revisit_cooldown=revisit_cooldown,
             max_hnsw_count=max_hnsw_count,
         )
+        self.healing_tracker = HealingTracker()
         self._total_script_flags = 0
         self._prev_reward = 0.0
         self._game_state = {}
@@ -207,6 +210,7 @@ class CustomEmeraldWrapper(GameWrapper):
             return 0.0
         
         self.exploration_tracker.update(state.get("location", None), state.get("pos", None))
+        self.healing_tracker.update(state.get("party", []))
 
         trainer_flags = state.get("trainer_flags", None)
         num_trainer_flags = count_flags(trainer_flags)
