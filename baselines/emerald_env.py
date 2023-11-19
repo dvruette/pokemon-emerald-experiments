@@ -23,10 +23,11 @@ class EmeraldEnv(PyGBAEnv):
         early_stopping_penalty: float = 0.0,
         action_noise: float = 0.0,
         reset_to_new_game_prob: float = 1.0,
-        save_intermediate_state_prob: float = 1e-4,
+        save_intermediate_state_prob: float = 1e-3,
+        wrapper_kwargs: dict = {},
         **kwargs,
     ):
-        game_wrapper = CustomEmeraldWrapper()
+        game_wrapper = CustomEmeraldWrapper(**wrapper_kwargs)
         self._intermediate_state = None
         super().__init__(gba, game_wrapper, **kwargs)
         self.rank = rank
