@@ -1,7 +1,6 @@
 import argparse
 import uuid
 from datetime import datetime
-from os.path import exists
 from pathlib import Path
 
 import torch
@@ -27,16 +26,28 @@ def parse_args():
     parser.add_argument('--frameskip', type=int, default=24)
     parser.add_argument('--sticky_action_prob', type=float, default=0.2)
     parser.add_argument('--action_noise', type=float, default=0.0)
+    parser.add_argument('--lr', type=float, default=1e-4)
+    parser.add_argument('--lr_warmup_steps', type=int, default=1000_000)
+    parser.add_argument('--num_steps', type=int, default=2048)
+    parser.add_argument('--batch_size', type=int, default=512)
+    parser.add_argument('--num_epochs', type=int, default=3)
+    parser.add_argument('--gamma', type=float, default=0.995)
+    parser.add_argument('--gae_lambda', type=float, default=0.97)
+    parser.add_argument('--clip_range', type=float, default=0.2)
+    parser.add_argument('--clip_range_warmup_steps', type=int, default=2000_000)
+    parser.add_argument('--target_kl', type=float, default=0.02)
+    parser.add_argument('--ent_coef', type=float, default=0.008)
+    parser.add_argument('--vf_coef', type=float, default=0.8)
     parser.add_argument('--episode_length', type=int, default=2048 * 32)
     parser.add_argument('--early_stopping_patience', type=int, default=2048 * 4)
     parser.add_argument('--early_stopping_penalty', type=float, default=0.0)
-    parser.add_argument('--learn_steps', type=int, default=40)
     parser.add_argument('--use_atari_wrapper', type=int, default=1)
     parser.add_argument('--checkpoint', type=str, default=None)
     parser.add_argument('--num_workers', type=int, default=24)
     parser.add_argument('--save_freq', type=int, default=2048 * 10)
     parser.add_argument('--resume_checkpoint', type=str, default=None)
     parser.add_argument('--use_wandb_logging', action='store_true')
+    parser.add_argument('--wandb_id', type=str, default=None)
     parser.add_argument('--seed', type=int, default=0)
     return parser.parse_args()
 
@@ -70,6 +81,7 @@ def make_gba_env(rank, env_conf, seed=0):
             early_stopping=env_conf['early_stopping_patience'] > 0,
             patience=env_conf['early_stopping_patience'],
             early_stopping_penalty=env_conf['early_stopping_penalty'],
+            wrapper_kwargs=env_conf['reward_config'],
         )
         # GBA screen is 240x160
         if env_conf['use_atari_wrapper'] == 1:
@@ -99,6 +111,27 @@ def main(args):
         early_stopping_penalty=args.early_stopping_penalty,
         use_atari_wrapper=args.use_atari_wrapper,
         reset_to_new_game_prob=0.5,
+        reward_config=dict(
+            badge_reward=10.0,
+            pokedex_reward=10,
+            pokenav_reward=10,
+            champion_reward=10.0,
+            visit_city_reward=5.0,
+            seen_pokemon_reward=0.2,
+            caught_pokemon_reward=1.0,
+            trainer_beat_reward=2.0,
+            money_gained_reward=0.0,
+            money_lost_reward=0.0,
+            event_reward=0.075,
+            exp_reward_transform="tanh",
+            exp_reward_shape=0.003,
+            exp_reward_scale=5,
+            exploration_reward=0.02,
+            revisit_reward=0.01,
+            health_reward=0.05,
+            exploration_dist_thresh=6.0,  # GBA screen is 7x5 tiles
+            reward_scale=1.0,
+        )
     )
     
     print(env_config)
@@ -111,38 +144,50 @@ def main(args):
         TensorboardCallback(),
     ]
 
+    ppo_args = dict(
+        learning_rate=args.lr,
+        n_steps=args.num_steps,
+        batch_size=args.batch_size,
+        n_epochs=args.num_epochs,
+        gamma=args.gamma,
+        gae_lambda=args.gae_lambda,
+        clip_range=args.clip_range,
+        target_kl=args.target_kl,
+        ent_coef=args.ent_coef,
+        vf_coef=args.vf_coef,
+    )
+
     if args.use_wandb_logging:
         import wandb
         from wandb.integration.sb3 import WandbCallback
         run = wandb.init(
             project="pokemon-rl",
-            id=sess_id,
-            config=env_config,
+            id=args.wandb_id or sess_id,
+            config={"env_config": env_config, "ppo_args": ppo_args, "args": vars(args)},
             sync_tensorboard=True,  
             monitor_gym=True,  
             save_code=True,
-            magic=True,
+            resume="allow",
         )
         callbacks.append(WandbCallback())
 
-    ppo_args = dict(
-        learning_rate=2e-4,
-        n_steps=2048,
-        batch_size=2048,
-        n_epochs=3,
-        gamma=0.995,
-        gae_lambda=0.97,
-        clip_range=0.1,
-        target_kl=0.025,
-        ent_coef=0.008,
-        vf_coef=0.75,
-    )
+    total_timesteps = (ep_length)*num_workers*1000
+
+    if args.lr_warmup_steps > 0:
+        warmup_frac = args.lr_warmup_steps / total_timesteps
+        lr = ppo_args['learning_rate']
+        ppo_args['learning_rate'] = lambda rem_t: lr * min(1.0, (1 - rem_t) / warmup_frac)
+
+    if args.clip_range_warmup_steps > 0:
+        warmup_frac = args.clip_range_warmup_steps / total_timesteps
+        clip_range = ppo_args['clip_range']
+        ppo_args['clip_range'] = lambda rem_t: clip_range * min(1.0, (1 - rem_t) / warmup_frac)
     
     if args.resume_checkpoint is not None:
         print(f'Resuming from checkpoint: {args.resume_checkpoint}')
         model = RecurrentPPO.load(args.resume_checkpoint, env=env, **ppo_args)
         model.n_envs = num_workers
-        model.rollout_buffer.buffer_size = ep_length
+        model.rollout_buffer.buffer_size = ppo_args['n_steps']
         model.rollout_buffer.n_envs = num_workers
         model.rollout_buffer.reset()
     else:
@@ -153,16 +198,18 @@ def main(args):
             tensorboard_log=sess_path,
             policy_kwargs=dict(
                 activation_fn=torch.nn.ReLU,
-                lstm_hidden_size=256,
+                lstm_hidden_size=512,
                 share_features_extractor=True,
                 optimizer_class=torch.optim.Adam,
                 optimizer_kwargs=dict(weight_decay=0.0, eps=1e-12),
             ),
             **ppo_args,
         )
+
+    if args.use_wandb_logging:
+        wandb.watch(model.policy)
     
-    for i in range(args.learn_steps):
-        model.learn(total_timesteps=(ep_length)*num_workers*1000, callback=CallbackList(callbacks))
+    model.learn(total_timesteps=total_timesteps, callback=CallbackList(callbacks))
 
     if args.use_wandb_logging:
         run.finish()
