@@ -17,10 +17,12 @@ class ExplorationTracker:
         self,
         distance_threshold: float = 6.0,  # GBA screen is 7x5 tiles
         revisit_cooldown: int = 8192,
+        refresh_cooldown: int = 4096,
         max_hnsw_count: int = 100_000,
     ):
         self.distance_threshold = distance_threshold
         self.revisit_cooldown = revisit_cooldown
+        self.refresh_cooldown = refresh_cooldown
         self.max_hnsw_count = max_hnsw_count
 
         self.reset()
@@ -53,8 +55,8 @@ class ExplorationTracker:
                     self.cooldown_store[key] = self.curr_step + self.revisit_cooldown
                     self.total_visits += 1
                 else:
-                    # don't let the current location cool down
-                    self.cooldown_store[key] += 1
+                    # if the player is standing still, cooldown cannot go below reresh_cooldown
+                    self.cooldown_store[key] = max(self.cooldown_store[key], self.curr_step + self.refresh_cooldown)
             else:  # dist >= self.distance_threshold
                 index.add_items(pos, np.array([next_label]))
                 self.cooldown_store[pos_key] = self.curr_step + self.revisit_cooldown
@@ -107,7 +109,7 @@ class HealingTracker:
                 self.candidate_party[mon_id] = (mon_hp, max_hp)
                 is_consistent = False
 
-        for mon_id in self.candidate_party.keys():
+        for mon_id in list(self.candidate_party.keys()):
             if mon_id not in seen_ids:
                 del self.candidate_party[mon_id]
                 is_consistent = False
@@ -118,10 +120,6 @@ class HealingTracker:
             self.curr_party = self.candidate_party.copy()
             self.curr_consistency = 0
             self.candidate_party = {}
-
-        for mon_id in self.curr_party.keys():
-            if mon_id not in seen_ids:
-                del self.curr_party[mon_id]
 
         for mon_id in self.curr_party.keys():
             if mon_id in self.prev_party:
@@ -288,6 +286,7 @@ class CustomEmeraldWrapper(GameWrapper):
     
     def reset(self, gba: PyGBA):
         self.exploration_tracker.reset()
+        self.healing_tracker.reset()
         self._game_state = {}
         self._location_store = {}
         self._total_script_flags = 0
