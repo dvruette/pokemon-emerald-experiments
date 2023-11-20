@@ -23,11 +23,17 @@ class TensorboardCallback(BaseCallback):
 
     def _on_step(self) -> bool:
         
-        for i in range(self.training_env.num_envs):
-            infos = self.training_env.get_attr("agent_stats", indices=[i])[0]
-            for key,val in infos[-1].items():
-                self.logger.record_mean(f"env_stats/{key}", val)
-                if self.training_env.env_method("check_if_done", indices=[i])[0]:
-                    self.logger.record_mean(f"env_stats/episode_{key}", val)
+        is_done = self.training_env.env_method("check_if_done")
+        for i, done in enumerate(is_done):
+            if done:
+                infos = self.training_env.get_attr("agent_stats", indices=[i])[0]
+                for key,val in infos[-1].items():
+                    self.logger.record_mean(f"env_stats/{key}", val)
 
         return True
+    
+    def _on_rollout_end(self) -> None:
+        all_infos = self.training_env.get_attr("agent_stats")
+        for infos in all_infos:
+            for key,val in infos[-1].items():
+                self.logger.record_mean(f"env_stats/mean_{key}", val)
