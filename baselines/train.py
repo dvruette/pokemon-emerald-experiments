@@ -29,15 +29,16 @@ def parse_args():
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--lr_warmup_steps', type=int, default=1000_000)
     parser.add_argument('--num_steps', type=int, default=2048)
-    parser.add_argument('--batch_size', type=int, default=512)
+    parser.add_argument('--batch_size', type=int, default=1024)
     parser.add_argument('--num_epochs', type=int, default=3)
     parser.add_argument('--gamma', type=float, default=0.995)
     parser.add_argument('--gae_lambda', type=float, default=0.97)
     parser.add_argument('--clip_range', type=float, default=0.2)
     parser.add_argument('--clip_range_warmup_steps', type=int, default=2000_000)
-    parser.add_argument('--target_kl', type=float, default=0.02)
+    parser.add_argument('--target_kl', type=float, default=0.03)
     parser.add_argument('--ent_coef', type=float, default=0.008)
     parser.add_argument('--vf_coef', type=float, default=0.8)
+    parser.add_argument('--reward_scale', type=float, default=1.0)
     parser.add_argument('--episode_length', type=int, default=2048 * 32)
     parser.add_argument('--early_stopping_patience', type=int, default=2048 * 4)
     parser.add_argument('--early_stopping_penalty', type=float, default=0.0)
@@ -130,7 +131,7 @@ def main(args):
             revisit_reward=0.01,
             heal_reward=0.05,
             exploration_dist_thresh=6.0,  # GBA screen is 7x5 tiles
-            reward_scale=1.0,
+            reward_scale=args.reward_scale,
         )
     )
     
