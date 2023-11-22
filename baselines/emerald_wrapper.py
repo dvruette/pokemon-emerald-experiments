@@ -80,8 +80,10 @@ class ExplorationTracker:
 class HealingTracker:
     def __init__(
         self,
+        healing_threshold: float = 0.5,
         consistency_threshold: int = 4,
     ):
+        self.healing_threshold = healing_threshold
         self.consistency_threshold = consistency_threshold
 
         self.reset()
@@ -129,7 +131,12 @@ class HealingTracker:
                     prev_missing_hp = prev_max_hp - prev_hp
                     curr_missing_hp = curr_max_hp - curr_hp
                     healed_amount = max(0, prev_missing_hp - curr_missing_hp)
-                    self.total_healed_amount += healed_amount / curr_max_hp
+                
+                    # give reward if at least one mon was missing 50% of HP or PP
+                    # TODO: implement pp tracking
+                    if healed_amount / curr_max_hp > self.healing_threshold:
+                        self.total_healed_amount += 1
+                        break
 
         self.prev_party = self.curr_party.copy()
 
@@ -157,13 +164,12 @@ class CustomEmeraldWrapper(GameWrapper):
         exp_reward_transform: Literal["linear", "sqrt", "log", "tanh"] = "tanh",
         exp_reward_shape: float = 0.003,
         exp_reward_scale: float = 5,
-        heal_reward: float = 0.05,
+        heal_reward: float = 0.5,
         exploration_reward: float = 0.02,
         revisit_reward: float = 0.01,
         revisit_cooldown: int = 8192,
         exploration_dist_thresh: float = 6.0,  # GBA screen is 7x5 tiles
         max_hnsw_count: int = 100_000,
-        reward_scale: float = 1.0,
     ):
         self.badge_reward = badge_reward
         self.pokedex_reward = pokedex_reward
@@ -182,7 +188,6 @@ class CustomEmeraldWrapper(GameWrapper):
         self.heal_reward = heal_reward
         self.exploration_reward = exploration_reward
         self.revisit_reward = revisit_reward
-        self.reward_scale = reward_scale
 
         self.exploration_tracker = ExplorationTracker(
             distance_threshold=exploration_dist_thresh,
@@ -282,7 +287,7 @@ class CustomEmeraldWrapper(GameWrapper):
         prev_reward = self._prev_reward
         self._prev_reward = reward
         self._prev_game_state = state.copy()
-        return self.reward_scale * (reward - prev_reward)
+        return reward - prev_reward
     
     def reset(self, gba: PyGBA):
         self.exploration_tracker.reset()

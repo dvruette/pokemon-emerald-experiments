@@ -7,7 +7,6 @@ import torch
 from stable_baselines3 import PPO
 from sb3_contrib import RecurrentPPO
 from stable_baselines3.common.vec_env import SubprocVecEnv
-from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.callbacks import CheckpointCallback, CallbackList
 from stable_baselines3.common.atari_wrappers import WarpFrame
 from tensorboard_callback import TensorboardCallback
@@ -32,19 +31,22 @@ def parse_args():
     parser.add_argument('--batch_size', type=int, default=1024)
     parser.add_argument('--num_epochs', type=int, default=3)
     parser.add_argument('--gamma', type=float, default=0.995)
-    parser.add_argument('--gae_lambda', type=float, default=0.97)
+    parser.add_argument('--gae_lambda', type=float, default=0.95)
     parser.add_argument('--clip_range', type=float, default=0.2)
     parser.add_argument('--clip_range_warmup_steps', type=int, default=2000_000)
+    parser.add_argument('--clip_range_vf', type=float, default=None)
     parser.add_argument('--target_kl', type=float, default=0.03)
-    parser.add_argument('--ent_coef', type=float, default=0.008)
+    parser.add_argument('--ent_coef', type=float, default=0.01)
     parser.add_argument('--vf_coef', type=float, default=0.8)
     parser.add_argument('--reward_scale', type=float, default=1.0)
+    parser.add_argument('--reward_clipping', type=int, default=1)
     parser.add_argument('--episode_length', type=int, default=2048 * 32)
     parser.add_argument('--early_stopping_patience', type=int, default=2048 * 4)
     parser.add_argument('--early_stopping_penalty', type=float, default=0.0)
+    parser.add_argument('--reset_to_new_game_prob', type=float, default=1.0)
     parser.add_argument('--use_atari_wrapper', type=int, default=1)
     parser.add_argument('--checkpoint', type=str, default=None)
-    parser.add_argument('--num_workers', type=int, default=24)
+    parser.add_argument('--num_workers', type=int, default=1)
     parser.add_argument('--save_freq', type=int, default=2048 * 10)
     parser.add_argument('--resume_checkpoint', type=str, default=None)
     parser.add_argument('--use_wandb_logging', action='store_true')
@@ -75,21 +77,24 @@ def make_gba_env(rank, env_conf, seed=0):
             gba,
             rank=rank,
             max_episode_steps=env_conf['max_steps'],
-            frames_path=env_conf['frames_path'],
             frameskip=env_conf['frameskip'],
             sticky_action_probability=env_conf['sticky_action_probability'],
             action_noise=env_conf['action_noise'],
             early_stopping=env_conf['early_stopping_patience'] > 0,
             patience=env_conf['early_stopping_patience'],
             early_stopping_penalty=env_conf['early_stopping_penalty'],
+            reset_to_new_game_prob=env_conf['reset_to_new_game_prob'],
+            reward_clipping=env_conf['reward_clipping'],
+            reward_scale=env_conf['reward_scale'],
             wrapper_kwargs=env_conf['reward_config'],
+            save_episode_trajectory=True,
+            episode_trajectory_path=env_conf['session_path'] / "trajectories" / f"{rank:02d}",
         )
         # GBA screen is 240x160
         if env_conf['use_atari_wrapper'] == 1:
             env = WarpFrame(env, width=120, height=80)
-        env.reset()
+        env.reset(seed=(seed + rank))
         return env
-    set_random_seed(seed + rank)
     return _init
 
 
@@ -98,12 +103,11 @@ def main(args):
     sess_id = str(uuid.uuid4())[:8]
     sess_path = Path(f'{args.output_dir}/{datetime.now().strftime("%Y-%m-%d/%H-%M-%S")}_{sess_id}')
     sess_path.mkdir(parents=True, exist_ok=True)
-    frames_path = sess_path / 'frames'
 
     env_config = dict(
         gba_path='roms/pokemon_emerald.gba',
         init_state=args.init_state,
-        frames_path=frames_path,
+        session_path=sess_path,
         max_steps=ep_length, 
         frameskip=args.frameskip,
         sticky_action_probability=args.sticky_action_prob,
@@ -111,7 +115,9 @@ def main(args):
         early_stopping_patience=args.early_stopping_patience,
         early_stopping_penalty=args.early_stopping_penalty,
         use_atari_wrapper=args.use_atari_wrapper,
-        reset_to_new_game_prob=0.5,
+        reset_to_new_game_prob=args.reset_to_new_game_prob,
+        reward_clipping=(args.reward_clipping == 1),
+        reward_scale=args.reward_scale,
         reward_config=dict(
             badge_reward=10.0,
             pokedex_reward=10,
@@ -129,9 +135,8 @@ def main(args):
             exp_reward_scale=5,
             exploration_reward=0.02,
             revisit_reward=0.01,
-            heal_reward=0.05,
-            exploration_dist_thresh=6.0,  # GBA screen is 7x5 tiles
-            reward_scale=args.reward_scale,
+            heal_reward=0.5,
+            exploration_dist_thresh=6.0,
         )
     )
     
@@ -153,6 +158,7 @@ def main(args):
         gamma=args.gamma,
         gae_lambda=args.gae_lambda,
         clip_range=args.clip_range,
+        clip_range_vf=args.clip_range_vf,
         target_kl=args.target_kl,
         ent_coef=args.ent_coef,
         vf_coef=args.vf_coef,
@@ -199,7 +205,7 @@ def main(args):
             tensorboard_log=sess_path,
             policy_kwargs=dict(
                 activation_fn=torch.nn.ReLU,
-                lstm_hidden_size=512,
+                lstm_hidden_size=1024,
                 share_features_extractor=True,
                 optimizer_class=torch.optim.Adam,
                 optimizer_kwargs=dict(weight_decay=0.0, eps=1e-12),

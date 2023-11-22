@@ -1,22 +1,35 @@
+import json
 import re
 import shutil
 from pathlib import Path
 
 import gymnasium as gym
 import numpy as np
+from stable_baselines3.common.utils import set_random_seed
 from pygba import PyGBAEnv, PyGBA
 from pygba.utils import KEY_MAP
 
 from emerald_wrapper import CustomEmeraldWrapper
 
 
+def clip_reward(reward: float, pos_scale: float = 5.0, neg_scale: float = 0.3):
+    # from IMPALA: https://arxiv.org/abs/1802.01561
+    reward = np.tanh(reward)
+    if reward > 0:
+        reward *= pos_scale
+    else:
+        reward *= neg_scale
+    return reward
+
 class EmeraldEnv(PyGBAEnv):
     def __init__(
         self,
         gba: PyGBA,
         rank: int = 0,
-        frames_path: str | Path | None = None,
+        save_episode_trajectory: bool = False,
+        episode_trajectory_path: str | Path | None = None,
         save_episode_frames: bool = False,
+        frames_path: str | Path | None = None,
         frame_save_freq: int = 1,
         early_stopping: bool = False,
         patience: int = 1024,
@@ -24,13 +37,18 @@ class EmeraldEnv(PyGBAEnv):
         action_noise: float = 0.0,
         reset_to_new_game_prob: float = 1.0,
         save_intermediate_state_prob: float = 1e-3,
+        reward_clipping: bool = False,
+        reward_scale: float = 1.0,
+        verbose: bool = True,
         wrapper_kwargs: dict = {},
         **kwargs,
     ):
-        game_wrapper = CustomEmeraldWrapper(**wrapper_kwargs)
-        self._intermediate_state = None
-        super().__init__(gba, game_wrapper, **kwargs)
+        if save_episode_trajectory and episode_trajectory_path is None:
+            raise ValueError("episode_trajectory_path must be specified if save_episode_trajectory is True")
+
         self.rank = rank
+        self.save_episode_trajectory = save_episode_trajectory
+        self.episode_trajectory_path = episode_trajectory_path
         self.save_episode_frames = save_episode_frames
         self.frames_path = frames_path
         self.frame_save_freq = frame_save_freq
@@ -40,6 +58,15 @@ class EmeraldEnv(PyGBAEnv):
         self.action_noise = action_noise
         self.reset_to_new_game_prob = reset_to_new_game_prob
         self.save_intermediate_state_prob = save_intermediate_state_prob
+        self.reward_clipping = reward_clipping
+        self.reward_scale = reward_scale
+        self.verbose = verbose
+
+        self._intermediate_state = None
+        self._curr_trajectory_path = None
+        self._curr_seed = None
+        game_wrapper = CustomEmeraldWrapper(**wrapper_kwargs)
+        super().__init__(gba, game_wrapper, **kwargs)
 
         self.arrow_keys = [None, "up", "down", "right", "left"]
         # self.buttons = [None, "A", "B", "select", "start", "L", "R"]
@@ -102,6 +129,10 @@ class EmeraldEnv(PyGBAEnv):
         if self.early_stopping and self._step - self._max_reward_step > self.patience:
             reward -= self.early_stopping_penalty
 
+        reward = reward * self.reward_scale
+        if self.reward_clipping:
+            reward = clip_reward(reward)
+
         self._total_reward += reward
         if self._total_reward > self._max_reward:
             self._max_reward = self._total_reward
@@ -115,7 +146,31 @@ class EmeraldEnv(PyGBAEnv):
 
         self._step += 1
         reward_display = " | ".join(f"{re.sub(r'_rew(ard)?', '', k)}={v:.1f}" for k, v in info["rewards"].items())
-        print(f"\r step={self._step:5d} | {reward_display}", end="", flush=True)
+
+        if self.save_episode_trajectory and self._curr_trajectory_path is not None:
+            if self._step == 0:
+                self._curr_trajectory_path.mkdir(parents=True, exist_ok=True)
+                initial_state = self.gba.core.save_raw_state()
+                with open(self._curr_trajectory_path / "initial_state", "wb") as f:
+                    f.write(bytes(initial_state))
+
+                with open(self._curr_trajectory_path / "config.json", "w") as f:
+                    json.dump({
+                        "max_steps": self.max_episode_steps,
+                        "frameskip": self.frameskip,
+                        "sticky_action_probability": self.repeat_action_probability,
+                        "action_noise": self.action_noise,
+                        "seed": self._curr_seed
+                    }, f)
+
+            with open(self._curr_trajectory_path / "actions.txt", "a") as f:
+                f.write(str(action_id) + "\n")
+
+            with open(self._curr_trajectory_path / "log.txt", "a") as f:
+                f.write(f"step={self._step:5d} | {reward_display}\n")
+
+        if self.verbose:
+            print(f"\r step={self._step:5d} | {reward_display}", end="", flush=True)
         return observation, reward, done, truncated, info
     
     def check_if_truncated(self):
@@ -135,6 +190,10 @@ class EmeraldEnv(PyGBAEnv):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
+        if seed is not None:
+            set_random_seed(seed)
+
+        self._curr_seed = seed
         self._total_reward = 0
         self._max_reward = 0
         self._max_reward_step = 0
@@ -143,6 +202,10 @@ class EmeraldEnv(PyGBAEnv):
         if self._intermediate_state is not None and np.random.random() >= self.reset_to_new_game_prob:
             self.gba.core.load_raw_state(self._intermediate_state)
             self.gba.core.run_frame()
+
+        if self.save_episode_trajectory:
+            num_episodes = len(list(Path(self.episode_trajectory_path).glob("episode_*")))
+            self._curr_trajectory_path = Path(self.episode_trajectory_path) / f"episode_{num_episodes:04d}"
 
         observation = self._get_observation()
         
