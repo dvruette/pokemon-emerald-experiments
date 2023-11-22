@@ -76,7 +76,7 @@ def make_gba_env(env_conf, frames_path: str | None = None):
         env = WarpFrame(env, width=120, height=80)
     return env
 
-
+@torch.no_grad()
 def main(args):
     ep_length = args.episode_length
     sess_id = str(uuid.uuid4())[:8]
@@ -116,7 +116,7 @@ def main(args):
         state = None
         rewards = []
         total_reward = 0
-        with tqdm.tqdm(total=args.episode_length) as pbar:
+        with tqdm.tqdm(total=args.episode_length, smoothing=0.01) as pbar:
             for _ in range(args.episode_length):
                 action, state = model.predict(obs, state, deterministic=(args.deterministic_actions == 1))
                 obs, reward, done, truncated, info = env.step(action)
@@ -139,8 +139,6 @@ def main(args):
 
         print(f"Saved video to {sess_path / 'video.mp4'}")
         print(f"Saved rewards plot to {sess_path / 'rewards.png'}")
-
-        
 
 
 if __name__ == '__main__':
