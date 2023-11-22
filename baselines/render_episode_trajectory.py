@@ -112,6 +112,8 @@ def plot_rewards(rewards: list[float], output_path: Path):
     sns.set_theme()
     cum_rewards = np.cumsum(rewards)
     plt.plot(cum_rewards)
+    plt.xlabel("Step")
+    plt.ylabel("Cumulative Reward")
     plt.savefig(output_path)
 
 def main(args):

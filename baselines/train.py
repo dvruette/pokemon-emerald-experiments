@@ -1,4 +1,5 @@
 import argparse
+import json
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -103,6 +104,9 @@ def main(args):
     sess_id = str(uuid.uuid4())[:8]
     sess_path = Path(f'{args.output_dir}/{datetime.now().strftime("%Y-%m-%d/%H-%M-%S")}_{sess_id}')
     sess_path.mkdir(parents=True, exist_ok=True)
+
+    with (sess_path / "config.json").open("w") as f:
+        json.dump(vars(args), f, indent=4)
 
     env_config = dict(
         gba_path='roms/pokemon_emerald.gba',

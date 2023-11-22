@@ -144,7 +144,6 @@ class EmeraldEnv(PyGBAEnv):
         done = self.check_if_done()
         truncated = self.check_if_truncated()
 
-        self._step += 1
         reward_display = " | ".join(f"{re.sub(r'_rew(ard)?', '', k)}={v:.1f}" for k, v in info["rewards"].items())
 
         if self.save_episode_trajectory and self._curr_trajectory_path is not None:
@@ -171,6 +170,8 @@ class EmeraldEnv(PyGBAEnv):
 
         if self.verbose:
             print(f"\r step={self._step:5d} | {reward_display}", end="", flush=True)
+
+        self._step += 1
         return observation, reward, done, truncated, info
     
     def check_if_truncated(self):
