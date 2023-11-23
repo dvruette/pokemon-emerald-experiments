@@ -65,6 +65,12 @@ class EmeraldEnv(PyGBAEnv):
         self._intermediate_state = None
         self._curr_trajectory_path = None
         self._curr_seed = None
+        self._actions_file = None
+        self._log_file = None
+        self._total_reward = 0
+        self._max_reward = 0
+        self._max_reward_step = 0
+
         game_wrapper = CustomEmeraldWrapper(**wrapper_kwargs)
         super().__init__(gba, game_wrapper, **kwargs)
 
@@ -76,13 +82,26 @@ class EmeraldEnv(PyGBAEnv):
         self.actions = [(a, b) for a in self.arrow_keys for b in self.buttons]
         self.action_space = gym.spaces.Discrete(len(self.actions))
         
-        self._total_reward = 0
-        self._max_reward = 0
-        self._max_reward_step = 0
         self.agent_stats = []
 
     def step(self, action_id):
         info = {}
+        
+        if self.save_episode_trajectory and self._curr_trajectory_path is not None:
+            if self._step == 0:
+                self._curr_trajectory_path.mkdir(parents=True, exist_ok=True)
+                initial_state = self.gba.core.save_raw_state()
+                with open(self._curr_trajectory_path / "initial_state", "wb") as f:
+                    f.write(bytes(initial_state))
+
+                with open(self._curr_trajectory_path / "config.json", "w") as f:
+                    json.dump({
+                        "max_steps": self.max_episode_steps,
+                        "frameskip": self.frameskip,
+                        "sticky_action_probability": self.repeat_action_probability,
+                        "action_noise": self.action_noise,
+                        "seed": self._curr_seed
+                    }, f)
 
         if np.random.random() < self.action_noise:
             action_id = np.random.randint(len(self.actions))
@@ -145,31 +164,19 @@ class EmeraldEnv(PyGBAEnv):
         truncated = self.check_if_truncated()
 
         reward_display = " | ".join(f"{re.sub(r'_rew(ard)?', '', k)}={v:.1f}" for k, v in info["rewards"].items())
+        reward_display = f"step={self._step:5d} | {reward_display}"
 
         if self.save_episode_trajectory and self._curr_trajectory_path is not None:
-            if self._step == 0:
-                self._curr_trajectory_path.mkdir(parents=True, exist_ok=True)
-                initial_state = self.gba.core.save_raw_state()
-                with open(self._curr_trajectory_path / "initial_state", "wb") as f:
-                    f.write(bytes(initial_state))
+            if self._actions_file is None:
+                self._actions_file = open(self._curr_trajectory_path / "actions.txt", "w")
+            self._actions_file.write(str(action_id) + "\n")
 
-                with open(self._curr_trajectory_path / "config.json", "w") as f:
-                    json.dump({
-                        "max_steps": self.max_episode_steps,
-                        "frameskip": self.frameskip,
-                        "sticky_action_probability": self.repeat_action_probability,
-                        "action_noise": self.action_noise,
-                        "seed": self._curr_seed
-                    }, f)
-
-            with open(self._curr_trajectory_path / "actions.txt", "a") as f:
-                f.write(str(action_id) + "\n")
-
-            with open(self._curr_trajectory_path / "log.txt", "a") as f:
-                f.write(f"step={self._step:5d} | {reward_display}\n")
+            if self._log_file is None:
+                self._log_file = open(self._curr_trajectory_path / "log.txt", "w")
+            self._log_file.write(reward_display + "\n")
 
         if self.verbose:
-            print(f"\r step={self._step:5d} | {reward_display}", end="", flush=True)
+            print("\r " + reward_display, end="", flush=True)
 
         self._step += 1
         return observation, reward, done, truncated, info
@@ -190,6 +197,11 @@ class EmeraldEnv(PyGBAEnv):
         return False
 
     def reset(self, seed=None, options=None):
+        if self._actions_file is not None:
+            self._actions_file.close()
+        if self._log_file is not None:
+            self._log_file.close()
+
         super().reset(seed=seed)
         if seed is not None:
             set_random_seed(seed)

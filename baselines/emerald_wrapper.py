@@ -240,7 +240,7 @@ class CustomEmeraldWrapper(GameWrapper):
             exp_reward = round(exp_reward * 100) / 100
         else:
             print()
-            print(f"WARNING: total_gained_exp >= 0: {total_gained_exp}")
+            print(f"WARNING: total_gained_exp < 0: {total_gained_exp}")
             print()
             exp_reward = self._reward_info.get("exp_rew", 0.0)
 

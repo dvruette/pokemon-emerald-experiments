@@ -19,9 +19,9 @@ mgba.log.silence()
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--gba_path', type=str, default='roms/pokemon_emerald.gba')
     parser.add_argument('--trajectory_path', type=str, default='outputs/2023-11-22/17-09-28_32539bdd/trajectories/00/episode_0000')
     parser.add_argument('--output_path', type=str, default='outputs/2023-11-22/17-09-28_32539bdd/trajectories/00/episode_0000')
+    parser.add_argument('--gba_path', type=str, default='roms/pokemon_emerald.gba')
     parser.add_argument('--speedup', type=float, default=16.0)
     parser.add_argument('--resolution', type=str, default='480:320')
     return parser.parse_args()
@@ -99,6 +99,7 @@ def render_video(
         f"-framerate {framerate}",
         f"-i {str(frames_path)}/00/%06d.png",
         f"-vf scale={resolution}",
+        "-r 30",
         "-c:v libx264",
         "-pix_fmt yuv420p",
         "-sws_flags neighbor",
@@ -106,6 +107,7 @@ def render_video(
     ])
 
     print("Running:", ffmpeg_command)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     os.system(ffmpeg_command)
 
 def plot_rewards(rewards: list[float], output_path: Path):
@@ -114,6 +116,7 @@ def plot_rewards(rewards: list[float], output_path: Path):
     plt.plot(cum_rewards)
     plt.xlabel("Step")
     plt.ylabel("Cumulative Reward")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path)
 
 def main(args):
@@ -122,6 +125,7 @@ def main(args):
         frames_path.mkdir(parents=True, exist_ok=True)
 
         config, env, actions = load_trajectory(args.gba_path, Path(args.trajectory_path), frames_path)
+        # actions = actions[1:] # skip first action due to bug in EmeraldEnv
         rewards = simulate_trajectory(env, actions)
         render_video(
             frames_path,

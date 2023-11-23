@@ -47,7 +47,7 @@ def parse_args():
     parser.add_argument('--reset_to_new_game_prob', type=float, default=1.0)
     parser.add_argument('--use_atari_wrapper', type=int, default=1)
     parser.add_argument('--checkpoint', type=str, default=None)
-    parser.add_argument('--num_workers', type=int, default=1)
+    parser.add_argument('--num_workers', type=int, default=24)
     parser.add_argument('--save_freq', type=int, default=2048 * 10)
     parser.add_argument('--resume_checkpoint', type=str, default=None)
     parser.add_argument('--use_wandb_logging', action='store_true')
