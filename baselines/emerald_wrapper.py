@@ -125,7 +125,7 @@ class HealingTracker:
             self.curr_consistency = 0
             self.candidate_party = {}
 
-        total_hp = sum(hp for hp, _ in self.curr_party.values())
+        total_hp = sum(hp for hp, _ in self.prev_party.values())
         if total_hp == 0:
             # no reward on whiteout
             self.prev_party = self.curr_party.copy()
