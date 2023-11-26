@@ -29,9 +29,10 @@ def parse_args():
 def make_gba_env(
     gba_file: str,
     frames_path: str,
+    trajectory_path: Path,
     max_steps: int = 32 * 2048,
     frameskip: int = 24,
-    sticky_action_probability: float = 0.2,
+    repeat_action_probability: float = 0.0,
     action_noise: float = 0.0,
     seed: int = 0,
 ):
@@ -40,38 +41,41 @@ def make_gba_env(
         gba,
         max_episode_steps=max_steps,
         frameskip=frameskip,
-        sticky_action_probability=sticky_action_probability,
+        repeat_action_probability=repeat_action_probability,
         action_noise=action_noise,
         save_episode_frames=True,
         frame_save_freq=1,
         frames_path=frames_path,
+        save_episode_trajectory=True,
+        episode_trajectory_path=trajectory_path,
         verbose=False,
     )
     env.reset(seed)
     return env
 
-def load_trajectory(gba_path: str, trajectory_path: Path, frames_path: Path):
-    with (trajectory_path / "config.json").open("r") as f:
+def load_trajectory(gba_path: str, input_traj_path: Path, output_traj_path: Path, frames_path: Path):
+    with (input_traj_path / "config.json").open("r") as f:
         config = json.load(f)
 
-    with (trajectory_path / "initial_state").open("rb") as f:
+    with (input_traj_path / "initial_state").open("rb") as f:
         initial_state_bytes = f.read()
-        initial_state = ffi.new(f"char[{len(initial_state_bytes)}]", initial_state_bytes)
+        initial_state = ffi.new(f"unsigned char[{len(initial_state_bytes)}]", initial_state_bytes)
 
     env = make_gba_env(
         gba_path,
         frames_path=frames_path,
+        trajectory_path=output_traj_path,
         max_steps=config["max_steps"],
         frameskip=config["frameskip"],
-        sticky_action_probability=config["sticky_action_probability"],
-        action_noise=config["action_noise"],
-        seed=config["seed"],
+        repeat_action_probability=config.get("repeat_action_probability", 0),
+        action_noise=config.get("action_noise", 0),
+        seed=config.get("seed", 0),
     )
 
+    env.gba.core.reset()
     env.gba.core.load_raw_state(initial_state)
-    # env.gba.core.reset()
 
-    with (trajectory_path / "actions.txt").open("r") as f:
+    with (input_traj_path / "actions.txt").open("r") as f:
         lines = f.readlines()
     actions = [int(l.strip()) for l in lines]
 
@@ -124,7 +128,9 @@ def main(args):
         frames_path = Path(tmpdir) / "frames"
         frames_path.mkdir(parents=True, exist_ok=True)
 
-        config, env, actions = load_trajectory(args.gba_path, Path(args.trajectory_path), frames_path)
+        output_path = Path(args.output_path)
+
+        config, env, actions = load_trajectory(args.gba_path, Path(args.trajectory_path), output_path / "trajectories", frames_path)
         # actions = actions[1:] # skip first action due to bug in EmeraldEnv
         rewards = simulate_trajectory(env, actions)
         render_video(
