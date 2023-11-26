@@ -24,7 +24,7 @@ def parse_args():
     parser.add_argument('--init_state', type=str, default='saves/pokemon_emerald.new_game.sav')
     parser.add_argument('--output_dir', type=str, default='outputs')
     parser.add_argument('--frameskip', type=int, default=24)
-    parser.add_argument('--sticky_action_prob', type=float, default=0.2)
+    parser.add_argument('--sticky_action_prob', type=float, default=0.1)
     parser.add_argument('--action_noise', type=float, default=0.0)
     parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--lr_warmup_steps', type=int, default=1000_000)
@@ -79,7 +79,7 @@ def make_gba_env(rank, env_conf, seed=0):
             rank=rank,
             max_episode_steps=env_conf['max_steps'],
             frameskip=env_conf['frameskip'],
-            sticky_action_probability=env_conf['sticky_action_probability'],
+            repeat_action_probability=env_conf['repeat_action_probability'],
             action_noise=env_conf['action_noise'],
             early_stopping=env_conf['early_stopping_patience'] > 0,
             patience=env_conf['early_stopping_patience'],
@@ -114,7 +114,7 @@ def main(args):
         session_path=sess_path,
         max_steps=ep_length, 
         frameskip=args.frameskip,
-        sticky_action_probability=args.sticky_action_prob,
+        repeat_action_probability=args.sticky_action_prob,
         action_noise=args.action_noise,
         early_stopping_patience=args.early_stopping_patience,
         early_stopping_penalty=args.early_stopping_penalty,

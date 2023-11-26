@@ -99,6 +99,8 @@ class HealingTracker:
         is_consistent = True
         seen_ids = set()
         for mon in party:
+            if mon is None or mon["box"] is None:
+                continue
             mon_id = mon["box"]["personality"]
             seen_ids.add(mon_id)
 
@@ -123,20 +125,26 @@ class HealingTracker:
             self.curr_consistency = 0
             self.candidate_party = {}
 
+        total_hp = sum(hp for hp, _ in self.curr_party.values())
+        if total_hp == 0:
+            # no reward on whiteout
+            self.prev_party = self.curr_party.copy()
+            return
+        
         for mon_id in self.curr_party.keys():
             if mon_id in self.prev_party:
                 prev_hp, prev_max_hp = self.prev_party[mon_id]
                 curr_hp, curr_max_hp = self.curr_party[mon_id]
-                if prev_hp > 0:  # don't count healing from fainted pokemon
-                    prev_missing_hp = prev_max_hp - prev_hp
-                    curr_missing_hp = curr_max_hp - curr_hp
-                    healed_amount = max(0, prev_missing_hp - curr_missing_hp)
-                
-                    # give reward if at least one mon was missing 50% of HP or PP
-                    # TODO: implement pp tracking
-                    if healed_amount / curr_max_hp > self.healing_threshold:
-                        self.total_healed_amount += 1
-                        break
+
+                prev_missing_hp = prev_max_hp - prev_hp
+                curr_missing_hp = curr_max_hp - curr_hp
+                healed_amount = max(0, prev_missing_hp - curr_missing_hp)
+            
+                # give reward if at least one mon was missing 50% of its HP or PP
+                # TODO: implement pp tracking
+                if healed_amount / curr_max_hp > self.healing_threshold:
+                    self.total_healed_amount += 1
+                    break
 
         self.prev_party = self.curr_party.copy()
 

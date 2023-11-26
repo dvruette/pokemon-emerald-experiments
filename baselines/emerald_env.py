@@ -65,11 +65,10 @@ class EmeraldEnv(PyGBAEnv):
         self._intermediate_state = None
         self._curr_trajectory_path = None
         self._curr_seed = None
-        self._actions_file = None
-        self._log_file = None
         self._total_reward = 0
         self._max_reward = 0
         self._max_reward_step = 0
+        self._rng = np.random.default_rng()
 
         game_wrapper = CustomEmeraldWrapper(**wrapper_kwargs)
         super().__init__(gba, game_wrapper, **kwargs)
@@ -98,13 +97,13 @@ class EmeraldEnv(PyGBAEnv):
                     json.dump({
                         "max_steps": self.max_episode_steps,
                         "frameskip": self.frameskip,
-                        "sticky_action_probability": self.repeat_action_probability,
+                        "repeat_action_probability": self.repeat_action_probability,
                         "action_noise": self.action_noise,
                         "seed": self._curr_seed
-                    }, f)
+                    }, f, indent=4)
 
-        if np.random.random() < self.action_noise:
-            action_id = np.random.randint(len(self.actions))
+        if self._rng.random() < self.action_noise:
+            action_id = self._rng.integers(len(self.actions))
         actions = self.get_action_by_id(action_id)
         actions = [KEY_MAP[a] for a in actions if a is not None]
 
@@ -123,11 +122,11 @@ class EmeraldEnv(PyGBAEnv):
             thumbnail_path.parent.mkdir(parents=True, exist_ok=True)
             img.save(thumbnail_path)
 
-        if np.random.random() > self.repeat_action_probability:
+        if self._rng.random() > self.repeat_action_probability:
             self.gba.core.set_keys(*actions)
 
         if isinstance(self.frameskip, tuple):
-            frameskip = np.random.randint(*self.frameskip)
+            frameskip = self._rng.integers(*self.frameskip)
         else:
             frameskip = self.frameskip
 
@@ -137,7 +136,7 @@ class EmeraldEnv(PyGBAEnv):
         observation = self._get_observation()
 
         # save intermediate state
-        if np.random.random() < self.save_intermediate_state_prob:
+        if self._rng.random() < self.save_intermediate_state_prob:
             self._intermediate_state = self.gba.core.save_raw_state()
 
         # reward calculation
@@ -167,13 +166,16 @@ class EmeraldEnv(PyGBAEnv):
         reward_display = f"step={self._step:5d} | {reward_display}"
 
         if self.save_episode_trajectory and self._curr_trajectory_path is not None:
-            if self._actions_file is None:
-                self._actions_file = open(self._curr_trajectory_path / "actions.txt", "w")
-            self._actions_file.write(str(action_id) + "\n")
+            with open(self._curr_trajectory_path / "actions.txt", "a") as f:
+                f.write(str(action_id) + "\n")
 
-            if self._log_file is None:
-                self._log_file = open(self._curr_trajectory_path / "log.txt", "w")
-            self._log_file.write(reward_display + "\n")
+            with open(self._curr_trajectory_path / "log.txt", "a") as f:
+                f.write(reward_display + "\n")
+
+            if done:
+                final_state = self.gba.core.save_raw_state()
+                with open(self._curr_trajectory_path / "final_state", "wb") as f:
+                    f.write(bytes(final_state))
 
         if self.verbose:
             print("\r " + reward_display, end="", flush=True)
@@ -182,7 +184,7 @@ class EmeraldEnv(PyGBAEnv):
         return observation, reward, done, truncated, info
     
     def check_if_truncated(self):
-        if self.max_episode_steps is not None and self._step >= self.max_episode_steps:
+        if self.max_episode_steps is not None and self._step + 1 >= self.max_episode_steps:
             return True
         if self.early_stopping and self._step - self._max_reward_step > self.patience:
             return True
@@ -197,16 +199,14 @@ class EmeraldEnv(PyGBAEnv):
         return False
 
     def reset(self, seed=None, options=None):
-        if self._actions_file is not None:
-            self._actions_file.close()
-        if self._log_file is not None:
-            self._log_file.close()
+        if seed is None:
+            seed = np.random.randint(2 ** 32 - 1)
 
         super().reset(seed=seed)
-        if seed is not None:
-            set_random_seed(seed)
-
+        set_random_seed(seed)
+        self._rng = np.random.default_rng(seed)
         self._curr_seed = seed
+
         self._total_reward = 0
         self._max_reward = 0
         self._max_reward_step = 0
@@ -214,7 +214,7 @@ class EmeraldEnv(PyGBAEnv):
 
         if self._intermediate_state is not None and np.random.random() >= self.reset_to_new_game_prob:
             self.gba.core.load_raw_state(self._intermediate_state)
-            self.gba.core.run_frame()
+            # self.gba.core.run_frame()
 
         if self.save_episode_trajectory:
             num_episodes = len(list(Path(self.episode_trajectory_path).glob("episode_*")))
