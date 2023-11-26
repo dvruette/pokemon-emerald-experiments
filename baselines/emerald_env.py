@@ -162,7 +162,7 @@ class EmeraldEnv(PyGBAEnv):
         done = self.check_if_done()
         truncated = self.check_if_truncated()
 
-        reward_display = " | ".join(f"{re.sub(r'_rew(ard)?', '', k)}={v:.1f}" for k, v in info["rewards"].items())
+        reward_display = " | ".join(f"{re.sub(r'_rew(ard)?', '', k)}={v:4.1f}" for k, v in info["rewards"].items())
         reward_display = f"step={self._step:5d} | {reward_display}"
 
         if self.save_episode_trajectory and self._curr_trajectory_path is not None:
@@ -197,6 +197,11 @@ class EmeraldEnv(PyGBAEnv):
             observation = self._get_observation()
             return self.game_wrapper.game_over(self.gba, observation)
         return False
+    
+    def get_last_agent_stats(self):
+        if len(self.agent_stats) == 0:
+            return None
+        return self.agent_stats[-1]
 
     def reset(self, seed=None, options=None):
         if seed is None:
