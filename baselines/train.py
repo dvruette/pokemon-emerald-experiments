@@ -44,7 +44,7 @@ def parse_args():
     parser.add_argument('--episode_length', type=int, default=2048 * 32)
     parser.add_argument('--early_stopping_patience', type=int, default=2048 * 4)
     parser.add_argument('--early_stopping_penalty', type=float, default=0.0)
-    parser.add_argument('--reset_to_new_game_prob', type=float, default=0.5)
+    parser.add_argument('--reset_to_new_game_prob', type=float, default=1.0)
     parser.add_argument('--use_atari_wrapper', type=int, default=1)
     parser.add_argument('--checkpoint', type=str, default=None)
     parser.add_argument('--num_workers', type=int, default=24)
@@ -88,6 +88,7 @@ def make_gba_env(rank, env_conf, seed=0):
             reward_clipping=env_conf['reward_clipping'],
             reward_scale=env_conf['reward_scale'],
             wrapper_kwargs=env_conf['reward_config'],
+            frames_path=env_conf['session_path'] / "frames",
             save_episode_trajectory=False,
             episode_trajectory_path=env_conf['session_path'] / "trajectories" / f"{rank:02d}",
         )

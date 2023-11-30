@@ -140,7 +140,7 @@ class HealingTracker:
                 curr_missing_hp = curr_max_hp - curr_hp
                 healed_amount = max(0, prev_missing_hp - curr_missing_hp)
             
-                # give reward if at least one mon was missing 50% of its HP or PP
+                # give reward if at least `healing_threshold`% HP or PP was healed
                 # TODO: implement pp tracking
                 if healed_amount / curr_max_hp > self.healing_threshold:
                     self.total_healed_amount += 1

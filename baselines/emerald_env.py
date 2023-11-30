@@ -220,6 +220,8 @@ class EmeraldEnv(PyGBAEnv):
         if self._intermediate_state is not None and np.random.random() >= self.reset_to_new_game_prob:
             self.gba.core.load_raw_state(self._intermediate_state)
             # self.gba.core.run_frame()
+        elif self.game_wrapper is not None:
+            self.game_wrapper.reset(self.gba)
 
         if self.save_episode_trajectory:
             num_episodes = len(list(Path(self.episode_trajectory_path).glob("episode_*")))
@@ -229,6 +231,6 @@ class EmeraldEnv(PyGBAEnv):
         
         info = {}
         if self.game_wrapper is not None:
-            self.game_wrapper.reset(self.gba)
+            # self.game_wrapper.reset(self.gba)
             info.update(self.game_wrapper.info(self.gba, observation))
         return observation, info
