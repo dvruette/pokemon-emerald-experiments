@@ -1,6 +1,6 @@
 # Train RL agents to play Pokemon Emerald
 
-**Best Trained checkpoint:** Download the latest checkpoint from here (https://polybox.ethz.ch/index.php/s/ubJtlxnrwdmPshP). It is able to reach the second Gym but is currently stuck exploiting the reward function by travelling with Mr. Briney between Dewford Town and Petalburg City (farming event reward).
+**Best Trained checkpoint (2023/12/03):** Download the latest checkpoint from here (https://polybox.ethz.ch/index.php/s/ubJtlxnrwdmPshP). It is able to reach the second Gym but is currently stuck exploiting the reward function by travelling with Mr. Briney between Dewford Town and Petalburg City (farming event reward).
 
 ## Training the Model 🏋️
 
