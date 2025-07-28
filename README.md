@@ -15,6 +15,9 @@ source .venv/bin/activate
 pip install -r baselines/requirements.txt
 ```
 
+The environment relies on the [`pygba`](https://github.com/dvruette/pygba) package, which can be a bit of a pain to get working, since it currently requires compiling [mGBA](https://github.com/mgba-emu/mgba) from source.
+For more detailed installation instructions, refer to the `pygba` GitHub page.
+
 3. Run training script:
 ```bash
 python baselines/run_baseline_parallel_fast.py
